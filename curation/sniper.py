@@ -5,32 +5,23 @@ import time
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
-from command.basic.logger_config import logger
-from command.basic.config import steem_domain, hive_domain
-from command.basic.beem_request import Blockchain
-from command.basic.db import Database
-
+from .components.logger_config import logger
+from .components.config import steem_domain, hive_domain, admin_id, TOKEN, steem_curator, steem_curator_posting_key, hive_curator, hive_curator_posting_key
+from .components.beem import Blockchain
+from db import User, db
+from app import app
+from sqlalchemy import func
 class SocialMediaPublisher:
-    def __init__(self, config_path):
-        with open(config_path, 'r') as file:
-            config = json.load(file)
-        self.db_path = config["db_path"]
-        self.nodes = config["nodes"]
-        self.admin_id = config["admin_id"]
-        self.TOKEN = config["TOKEN"]
-        self.steem_curator = config["steem_curator"]
-        self.steem_curator_posting_key = config["steem_curator_posting_key"]
-        self.hive_curator = config["hive_curator"]
-        self.hive_curator_posting_key = config["hive_curator_posting_key"]
-        self.beem = Blockchain()
-        self.last_check_time = defaultdict(lambda: datetime.now(timezone.utc))
-        self.published_posts = set()
-        self.db = Database()
-    
+    def __init__(self):
+        self.db = db  # Initialize the database connection
+        self.beem = Blockchain()  # Initialize the Blockchain class
+
     def update_user_data(self):
-        """Aggiorna i dati degli utenti dal database."""
-        steem_usernames = [user['username'] for user in self.db.get_users() if user['platform'] == 'STEEM']
-        hive_usernames = [user['username'] for user in self.db.get_users() if user['platform'] == 'HIVE']
+        with app.app_context():  # Imposta il contesto dell'app
+            steem_users = User.query.filter(User.data['platform'].astext.ilike('steem')).all()
+            hive_users = User.query.filter(User.data['platform'].astext.ilike('hive')).all()
+            steem_usernames = [user.username for user in steem_users]
+            hive_usernames = [user.username for user in hive_users]
         return steem_usernames, hive_usernames
 
     def publish_posts(self):
@@ -46,11 +37,11 @@ class SocialMediaPublisher:
                 futures = []
                 if steem_usernames:
                     futures.append(
-                        executor.submit(self.get_posts, steem_usernames, self.nodes['steem'], 'Steem')
+                        executor.submit(self.beem.get_posts, steem_usernames,'Steem')
                     )
                 if hive_usernames:
                     futures.append(
-                        executor.submit(self.get_posts, hive_usernames, self.nodes['hive'], 'Hive')
+                        executor.submit(self.beem.get_posts, hive_usernames, 'Hive')
                     )
 
                 for future, platform in zip(futures, ["steem", "hive"]):
@@ -63,35 +54,35 @@ class SocialMediaPublisher:
                         for link in new_links:
                             post_link = f"{domain}{link}"
                             if platform.upper() == "STEEM":
-                                steem_curator_info = self.beem.get_steem_profile_info(self.steem_curator)
+                                steem_curator_info = self.beem.get_steem_profile_info(steem_curator)
                                 last_vote_time = steem_curator_info['result'][0]['last_vote_time']
                                 old_hive_voting_power = steem_curator_info['result'][0]['voting_power'] / 100
                                 steem_voting_power = self.beem.calculate_voting_power(last_vote_time, old_hive_voting_power)
                                 telegram_message = f"[{platform.upper()}] (VP: {steem_voting_power})\n{post_link}"
-                                self.send_telegram_message(self.TOKEN, self.admin_id, telegram_message)
+                                self.send_telegram_message(TOKEN, admin_id, telegram_message)
                                 author = self.beem.get_steem_author(post_link)
                                 permlink = self.beem.get_steem_permlink(post_link)
                                 if steem_voting_power > 89:
                                     time.sleep(30)
-                                    self.beem.like_steem_post(voter=self.steem_curator, voted=author, permlink=permlink, private_posting_key=self.steem_curator_posting_key, weight=100)
-                                    self.send_telegram_message(self.TOKEN, self.admin_id, "Voted!")
+                                    self.beem.like_steem_post(voter=steem_curator, voted=author, permlink=permlink, private_posting_key=steem_curator_posting_key, weight=100)
+                                    self.send_telegram_message(TOKEN, admin_id, "Voted!")
                                 else:
-                                    self.send_telegram_message(self.TOKEN, self.admin_id, "Not Voted!")
+                                    self.send_telegram_message(TOKEN, admin_id, "Not Voted!")
                             elif platform.upper() == "HIVE":
-                                hive_curator_info = self.beem.get_hive_profile_info(self.hive_curator)
+                                hive_curator_info = self.beem.get_hive_profile_info(hive_curator)
                                 last_vote_time = hive_curator_info['result'][0]['last_vote_time']
                                 old_hive_voting_power = hive_curator_info['result'][0]['voting_power'] / 100
                                 hive_voting_power = self.beem.calculate_voting_power(last_vote_time, old_hive_voting_power)
                                 telegram_message = f"[{platform.upper()}] (VP: {hive_voting_power})\n{post_link}"
-                                self.send_telegram_message(self.TOKEN, self.admin_id, telegram_message)
+                                self.send_telegram_message(TOKEN, admin_id, telegram_message)
                                 author = self.beem.get_hive_author(post_link)
                                 permlink = self.beem.get_hive_permlink(post_link)
                                 if hive_voting_power > 89:
                                     time.sleep(30)
-                                    self.beem.like_hive_post(voter=self.hive_curator, voted=author, permlink=permlink, private_posting_key=self.hive_curator_posting_key, weight=100)
-                                    self.send_telegram_message(self.TOKEN, self.admin_id, "Voted!")                                   
+                                    self.beem.like_hive_post(voter=hive_curator, voted=author, permlink=permlink, private_posting_key=hive_curator_posting_key, weight=100)
+                                    self.send_telegram_message(TOKEN, admin_id, "Voted!")                                   
                                 else:
-                                    self.send_telegram_message(self.TOKEN, self.admin_id, "Not Voted!")
+                                    self.send_telegram_message(TOKEN, admin_id, "Not Voted!")
                 time.sleep(15)  # Controlla ogni 15 secondi
 
     def send_telegram_message(self, bot_token, chat_id, message):
@@ -103,7 +94,3 @@ class SocialMediaPublisher:
             logger.error(f"Error telegram server {e}")
             return False
 
-if __name__ == '__main__':
-    CONFIG_PATH = "config.json"
-    publisher = SocialMediaPublisher(CONFIG_PATH)
-    publisher.publish_posts()

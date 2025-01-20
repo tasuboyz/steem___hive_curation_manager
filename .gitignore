@@ -1,2 +1,4 @@
 /.venv
 /instance
+/db
+/log.txt

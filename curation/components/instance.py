@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import datetime, timezone
+from flask import Flask
 
 published_posts = set()
 
