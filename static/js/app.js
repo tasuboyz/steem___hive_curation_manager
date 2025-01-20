@@ -39,6 +39,10 @@ class ApiHandler {
     }
   }
 
+  async getUser() {
+    return await this.sendRequest('/users', 'GET');
+  }
+
   async addUser(userData) {
     return await this.sendRequest('/users', 'POST', userData);
   }
@@ -438,7 +442,28 @@ class CurationInterface {
     localStorage.setItem('curatedUsers', JSON.stringify(Array.from(this.users.entries())));
   }
 
-  loadSavedUsers() {
+  async loadSavedUsers() {
+    try {
+      // Prova a caricare gli utenti dall'API
+      const response = await this.api.getUser();
+  
+      if (response.success) {
+        // Se la risposta è positiva, aggiorna la mappa degli utenti
+        this.users = new Map(response.data.map(user => [user.username, user.data]));
+        this.renderUsersList();
+      } else {
+        // Se c'è un errore, prova a caricare i dati dal localStorage
+        console.warn('Failed to load users from API, loading from localStorage instead.');
+        this.loadUsersFromLocalStorage();
+      }
+    } catch (error) {
+      console.error('Error loading users from API:', error);
+      // Se c'è un errore, prova a caricare i dati dal localStorage
+      this.loadUsersFromLocalStorage();
+    }
+  }
+  
+  loadUsersFromLocalStorage() {
     const saved = localStorage.getItem('curatedUsers');
     if (saved) {
       this.users = new Map(JSON.parse(saved));

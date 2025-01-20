@@ -1,18 +1,10 @@
+# app.py
 from flask import Flask, request, jsonify, render_template
-from flask_sqlalchemy import SQLAlchemy
+from db import User, db  # Importa il modello e l'istanza di SQLAlchemy
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
-
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    data = db.Column(db.JSON, nullable=False)
-
-    def __repr__(self):
-        return f'<User {self.username}>'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///yourdatabase.db'  # Configura il database
+db.init_app(app)  # Inizializza SQLAlchemy con l'app
 
 @app.route('/')
 def home():
@@ -24,7 +16,7 @@ def add_user():
     new_user = User(username=user_data['username'], data=user_data)
     db.session.add(new_user)
     db.session.commit()
-    return jsonify({'message': 'User added successfully'})
+    return jsonify({'message': 'User  added successfully'})
 
 @app.route('/users/<username>', methods=['PUT'])
 def update_user(username):
@@ -33,8 +25,8 @@ def update_user(username):
     if user:
         user.data = user_data
         db.session.commit()
-        return jsonify({'message': 'User updated successfully'})
-    return jsonify({'message': 'User not found'}), 404
+        return jsonify({'message': 'User  updated successfully'})
+    return jsonify({'message': 'User  not found'}), 404
 
 @app.route('/users/<username>', methods=['DELETE'])
 def delete_user(username):
@@ -42,17 +34,24 @@ def delete_user(username):
     if user:
         db.session.delete(user)
         db.session.commit()
-        return jsonify({'message': 'User deleted successfully'})
-    return jsonify({'message': 'User not found'}), 404
+        return jsonify({'message': 'User  deleted successfully'})
+    return jsonify({'message': 'User  not found'}), 404
 
 @app.route('/users/<username>', methods=['GET'])
 def get_user(username):
     user = User.query.filter_by(username=username).first()
     if user:
-        return jsonify(user.data)
-    return jsonify({'message': 'User not found'}), 404
+        user_list = user.data
+        return jsonify(user_list)
+    return jsonify({'message': 'User  not found'}), 404
+
+@app.route('/users', methods=['GET'])
+def get_all_users():
+    users = User.query.all()
+    user_list = [{'username': user.username, 'data': user.data} for user in users]
+    return jsonify(user_list)
 
 if __name__ == '__main__':
     with app.app_context():
-        db.create_all()
+        db.create_all()  # Crea tutte le tabelle
     app.run(debug=True, port=8081)
