@@ -22,7 +22,6 @@ class SocialMediaPublisher:
         return steem_usernames, hive_usernames
 
     def publish_posts(self):
-        """Ciclo principale per pubblicare i nuovi post trovati."""
         published_links = {"steem": set(), "hive": set()}
 
         steem_usernames, hive_usernames = self.update_user_data()
@@ -34,7 +33,7 @@ class SocialMediaPublisher:
                 futures = []
                 if steem_usernames:
                     futures.append(
-                        executor.submit(self.beem.get_posts, steem_usernames,'Steem')
+                        executor.submit(self.beem.get_posts, steem_usernames, 'Steem')
                     )
                 if hive_usernames:
                     futures.append(
@@ -50,36 +49,43 @@ class SocialMediaPublisher:
                         published_links[platform].update(new_links)
                         for link in new_links:
                             post_link = f"{domain}{link}"
-                            if platform.upper() == "STEEM":
-                                steem_curator_info = self.beem.get_steem_profile_info(steem_curator)
-                                last_vote_time = steem_curator_info['result'][0]['last_vote_time']
-                                old_hive_voting_power = steem_curator_info['result'][0]['voting_power'] / 100
-                                steem_voting_power = self.beem.calculate_voting_power(last_vote_time, old_hive_voting_power)
-                                telegram_message = f"[{platform.upper()}] (VP: {steem_voting_power})\n{post_link}"
-                                self.send_telegram_message(TOKEN, admin_id, telegram_message)
-                                author = self.beem.get_steem_author(post_link)
-                                permlink = self.beem.get_steem_permlink(post_link)
-                                if steem_voting_power > 89:
-                                    time.sleep(30)
-                                    self.beem.like_steem_post(voter=steem_curator, voted=author, permlink=permlink, private_posting_key=steem_curator_posting_key, weight=100)
-                                    self.send_telegram_message(TOKEN, admin_id, "Voted!")
-                                else:
-                                    self.send_telegram_message(TOKEN, admin_id, "Not Voted!")
-                            elif platform.upper() == "HIVE":
-                                hive_curator_info = self.beem.get_hive_profile_info(hive_curator)
-                                last_vote_time = hive_curator_info['result'][0]['last_vote_time']
-                                old_hive_voting_power = hive_curator_info['result'][0]['voting_power'] / 100
-                                hive_voting_power = self.beem.calculate_voting_power(last_vote_time, old_hive_voting_power)
-                                telegram_message = f"[{platform.upper()}] (VP: {hive_voting_power})\n{post_link}"
-                                self.send_telegram_message(TOKEN, admin_id, telegram_message)
-                                author = self.beem.get_hive_author(post_link)
-                                permlink = self.beem.get_hive_permlink(post_link)
-                                if hive_voting_power > 89:
-                                    time.sleep(30)
-                                    self.beem.like_hive_post(voter=hive_curator, voted=author, permlink=permlink, private_posting_key=hive_curator_posting_key, weight=100)
-                                    self.send_telegram_message(TOKEN, admin_id, "Voted!")                                   
-                                else:
-                                    self.send_telegram_message(TOKEN, admin_id, "Not Voted!")
+                            user_data = next((user for user in local_data_list if user['username'] in post_link), None)
+
+                            if user_data:
+                                vote_delay = user_data['voteDelay']
+                                vote_weight = user_data['voteWeight']
+
+                                if platform.upper() == "STEEM":
+                                    steem_curator_info = self.beem.get_steem_profile_info(steem_curator)
+                                    last_vote_time = steem_curator_info['result'][0]['last_vote_time']
+                                    old_hive_voting_power = steem_curator_info['result'][0]['voting_power'] / 100
+                                    steem_voting_power = self.beem.calculate_voting_power(last_vote_time, old_hive_voting_power)
+                                    telegram_message = f"[{platform.upper()}] (VP: {steem_voting_power})\n{post_link}"
+                                    self.send_telegram_message(TOKEN, admin_id, telegram_message)
+                                    author = self.beem.get_steem_author(post_link)
+                                    permlink = self.beem.get_steem_permlink(post_link)
+                                    if steem_voting_power > 89:
+                                        time.sleep(vote_delay)
+                                        self.beem.like_steem_post(voter=steem_curator, voted=author, permlink=permlink, private_posting_key=steem_curator_posting_key, weight=vote_weight)
+                                        self.send_telegram_message(TOKEN, admin_id, "Voted!")
+                                    else:
+                                        self.send_telegram_message(TOKEN, admin_id, "Not Voted!")
+                                elif platform.upper() == "HIVE":
+                                    hive_curator_info = self.beem.get_hive_profile_info(hive_curator)
+                                    last_vote_time = hive_curator_info['result'][0]['last_vote_time']
+                                    old_hive_voting_power = hive_curator_info['result'][0]['voting_power'] / 100
+                                    hive_voting_power = self.beem.calculate_voting_power(last_vote_time, old_hive_voting_power)
+                                    telegram_message = f"[{platform.upper()}] (VP: {hive_voting_power})\n{post_link}"
+                                    self.send_telegram_message(TOKEN, admin_id, telegram_message)
+                                    author = self.beem.get_hive_author(post_link)
+                                    permlink = self.beem.get_hive_permlink(post_link)
+                                    if hive_voting_power > 89:
+                                        time.sleep(vote_delay) 
+                                        self.beem.like_hive_post(voter=hive_curator, voted=author, permlink=permlink, private_posting_key=hive_curator_posting_key, weight=vote_weight)
+                                        self.send_telegram_message(TOKEN, admin_id, "Voted!")                                   
+                                    else:
+                                        self.send_telegram_message(TOKEN, admin_id, "Not Voted!")
+                                    # ...
                 time.sleep(15)  # Controlla ogni 15 secondi
 
     def send_telegram_message(self, bot_token, chat_id, message):

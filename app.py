@@ -72,4 +72,4 @@ if __name__ == '__main__':
     publisher = SocialMediaPublisher()  # Create an instance of SocialMediaPublisher
     publisher_thread = threading.Thread(target=publisher.publish_posts)  # Start publish_posts in a separate thread
     publisher_thread.start()
-    app.run(debug=True, port=8081, host='0.0.0.0')
+    app.run(debug=True, port=8088, host='0.0.0.0')
