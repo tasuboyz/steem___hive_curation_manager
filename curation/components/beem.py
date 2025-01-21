@@ -76,7 +76,7 @@ class Blockchain:
         current_time = datetime.now(timezone.utc)
         logger.info(f"Recuperando post per {len(usernames)} utenti su {platform}")
 
-        for node_url in self.node_urls:
+        for node_url in self.node_urls[platform.lower()]:
             if not self.ping_server(node_url):
                 logger.error(f"Impossibile raggiungere il server: {node_url}")
                 continue  # Prova il nodo successivo
@@ -120,7 +120,7 @@ class Blockchain:
                         else:
                             logger.info(f"Post non pubblicato di recente: {link} - età: {post_age}")
             except Exception as e:
-                logger.error(f"Errore durante la recuperazione dei post per {username} su {platform}: {e}")
+                logger.error(f"Errore durante la recupero dei post per {username} su {platform}: {e}")
 
         logger.info(f"Recuperati {len(post_links)} post per {len(usernames)} utenti su {platform}")
         return post_links

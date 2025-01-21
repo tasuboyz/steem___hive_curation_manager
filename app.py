@@ -1,6 +1,8 @@
-# app.py
+import threading
 from flask import Flask, request, jsonify, render_template
 from db import User, db  # Importa il modello e l'istanza di SQLAlchemy
+from curation.components.instance import local_data_list
+from curation.sniper import SocialMediaPublisher
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///yourdatabase.db'  # Configura il database
@@ -16,7 +18,7 @@ def add_user():
     new_user = User(username=user_data['username'], data=user_data)
     db.session.add(new_user)
     db.session.commit()
-    return jsonify({'message': 'User  added successfully'})
+    return jsonify({'message': 'User added successfully'})
 
 @app.route('/users/<username>', methods=['PUT'])
 def update_user(username):
@@ -25,8 +27,8 @@ def update_user(username):
     if user:
         user.data = user_data
         db.session.commit()
-        return jsonify({'message': 'User  updated successfully'})
-    return jsonify({'message': 'User  not found'}), 404
+        return jsonify({'message': 'User updated successfully'})
+    return jsonify({'message': 'User not found'}), 404
 
 @app.route('/users/<username>', methods=['DELETE'])
 def delete_user(username):
@@ -34,8 +36,8 @@ def delete_user(username):
     if user:
         db.session.delete(user)
         db.session.commit()
-        return jsonify({'message': 'User  deleted successfully'})
-    return jsonify({'message': 'User  not found'}), 404
+        return jsonify({'message': 'User deleted successfully'})
+    return jsonify({'message': 'User not found'}), 404
 
 @app.route('/users/<username>', methods=['GET'])
 def get_user(username):
@@ -43,7 +45,7 @@ def get_user(username):
     if user:
         user_list = user.data
         return jsonify(user_list)
-    return jsonify({'message': 'User  not found'}), 404
+    return jsonify({'message': 'User not found'}), 404
 
 @app.route('/users', methods=['GET'])
 def get_all_users():
@@ -51,7 +53,23 @@ def get_all_users():
     user_list = [{'username': user.username, 'data': user.data} for user in users]
     return jsonify(user_list)
 
+def get_user_data():
+    users = User.query.all()
+    for user in users:
+        user_data = {
+            'username': user.data['username'],
+            'platform': user.data['platform'],
+            'voteDelay': user.data['voteDelay'],
+            'voteWeight': user.data['voteWeight'],
+            'timestamp': user.data['timestamp']
+        }   
+        local_data_list.append(user_data)
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()  # Crea tutte le tabelle
-    app.run(debug=True, port=8081)
+        get_user_data()  # Ottieni i dati degli utenti dal database
+    publisher = SocialMediaPublisher()  # Create an instance of SocialMediaPublisher
+    publisher_thread = threading.Thread(target=publisher.publish_posts)  # Start publish_posts in a separate thread
+    publisher_thread.start()
+    app.run(debug=True, port=8081, host='0.0.0.0')
