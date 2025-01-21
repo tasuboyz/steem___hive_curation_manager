@@ -190,6 +190,7 @@ class CurationInterface {
     document.getElementById('exportDataBtn').addEventListener('click', () => this.exportData());
     document.getElementById('importDataBtn').addEventListener('click', () => document.getElementById('importInput').click());
     document.getElementById('importInput').addEventListener('change', (e) => this.importData(e));
+    document.getElementById('logDataBtn').addEventListener('click', () => this.logData());
   }
 
   switchPlatform(platform) {
@@ -670,6 +671,25 @@ class CurationInterface {
       this.showStatus('Error importing data: ' + error.message, 'error');
       e.target.value = '';
     }
+  }
+
+  logData() {
+    const data = {
+      users: Array.from(this.users.entries()),
+      currentPlatform: this.currentPlatform,
+      exportDate: new Date().toISOString(),
+      version: '1.0',
+      stats: {
+        totalUsers: this.users.size,
+        steemUsers: Array.from(this.users.values()).filter(u => u.platform === 'steem').length,
+        hiveUsers: Array.from(this.users.values()).filter(u => u.platform === 'hive').length
+      }
+    };
+
+    console.log('Current Curation Data:');
+    console.log(JSON.stringify(data, null, 2));
+    
+    this.showStatus('Data logged to console!', 'info');
   }
 }
 
