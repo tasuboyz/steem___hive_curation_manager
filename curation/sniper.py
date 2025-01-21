@@ -8,20 +8,17 @@ from collections import defaultdict
 from .components.logger_config import logger
 from .components.config import steem_domain, hive_domain, admin_id, TOKEN, steem_curator, steem_curator_posting_key, hive_curator, hive_curator_posting_key
 from .components.beem import Blockchain
-from db import User, db
-from app import app
-from sqlalchemy import func
+from .components.instance import local_data_list
+
 class SocialMediaPublisher:
     def __init__(self):
-        self.db = db  # Initialize the database connection
         self.beem = Blockchain()  # Initialize the Blockchain class
 
     def update_user_data(self):
-        with app.app_context():  # Imposta il contesto dell'app
-            steem_users = User.query.filter(User.data['platform'].astext.ilike('steem')).all()
-            hive_users = User.query.filter(User.data['platform'].astext.ilike('hive')).all()
-            steem_usernames = [user.username for user in steem_users]
-            hive_usernames = [user.username for user in hive_users]
+        steem_users = [data for data in local_data_list if data['platform'] == 'steem']
+        hive_users = [data for data in local_data_list if data['platform'] == 'hive']
+        steem_usernames = [local_data_list["username"] for local_data_list in steem_users]
+        hive_usernames = [local_data_list["username"] for local_data_list in hive_users]
         return steem_usernames, hive_usernames
 
     def publish_posts(self):
