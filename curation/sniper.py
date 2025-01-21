@@ -86,7 +86,7 @@ class SocialMediaPublisher:
                                     else:
                                         self.send_telegram_message(TOKEN, admin_id, "Not Voted!")
                                     # ...
-                time.sleep(15)  # Controlla ogni 15 secondi
+                time.sleep(5)  # Controlla ogni 15 secondi
 
     def send_telegram_message(self, bot_token, chat_id, message):
         try:
