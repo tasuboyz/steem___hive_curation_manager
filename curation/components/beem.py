@@ -8,6 +8,8 @@ from .config import node_list
 from .logger_config import logger
 from datetime import datetime, timezone
 from .instance import published_posts, last_check_time
+from beem.transactionbuilder import TransactionBuilder
+from beem.amount import Amount
 
 class Blockchain:
     def __init__(self, mode='irreversible'):
@@ -262,6 +264,34 @@ class Blockchain:
                     return data
                 else:
                     raise Exception(response.reason)
+                
+    def get_delegators(self, account_name):
+        hive = Hive(node=self.hive_node)
+        account = Account(account_name, steem_instance=hive)
+        delegations = account.get_vesting_delegations()
+        delegators = [delegation['delegator'] for delegation in delegations]
+        return delegators
+
+    def send_confirmation(self, to_account, amount="0.001", asset="STEEM"):
+        hive = Hive(node=self.hive_node)
+        tx = TransactionBuilder(steem_instance=hive)
+        tx.append_transfer(to_account, Amount(amount, asset, steem_instance=hive), memo="Confirmation")
+        tx.sign()
+        tx.broadcast()
+
+    def monitor_delegations(self, account_name):
+        hive = Hive(node=self.hive_node)
+        account = Account(account_name, steem_instance=hive)
+        previous_delegators = set(self.get_delegators(account_name))
+
+        while True:
+            current_delegators = set(self.get_delegators(account_name))
+            new_delegators = current_delegators - previous_delegators
+
+            for delegator in new_delegators:
+                self.send_confirmation(delegator)
+
+            previous_delegators = current_delegators
         
 ##################################################################################### Community command
         
