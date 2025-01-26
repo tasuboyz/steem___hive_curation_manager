@@ -65,6 +65,7 @@ class SocialMediaPublisher:
                                     author = self.beem.get_steem_author(post_link)
                                     permlink = self.beem.get_steem_permlink(post_link)
                                     if steem_voting_power > 89:
+                                        vote_delay = vote_delay * 60
                                         time.sleep(vote_delay)
                                         self.beem.like_steem_post(voter=steem_curator, voted=author, permlink=permlink, private_posting_key=steem_curator_posting_key, weight=vote_weight)
                                         self.send_telegram_message(TOKEN, admin_id, "Voted!")
@@ -80,6 +81,7 @@ class SocialMediaPublisher:
                                     author = self.beem.get_hive_author(post_link)
                                     permlink = self.beem.get_hive_permlink(post_link)
                                     if hive_voting_power > 89:
+                                        vote_delay = vote_delay * 60
                                         time.sleep(vote_delay) 
                                         self.beem.like_hive_post(voter=hive_curator, voted=author, permlink=permlink, private_posting_key=hive_curator_posting_key, weight=vote_weight)
                                         self.send_telegram_message(TOKEN, admin_id, "Voted!")                                   
