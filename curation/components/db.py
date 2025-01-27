@@ -11,4 +11,11 @@ class User(db.Model):
     data = db.Column(db.JSON, nullable=False)  # Ensure the correct data type
 
     def __repr__(self):
-        return f'<User {self.username}>'
+        return f'<User  {self.username}>'
+
+class Delegator(db.Model):  # Nuovo modello per i delegatori
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+
+    def __repr__(self):
+        return f'<Delegator {self.username}>'

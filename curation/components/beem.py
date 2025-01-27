@@ -4,12 +4,13 @@ from beem.comment import Comment
 from beem.community import Communities, Community
 import requests
 import json
-from .config import node_list
+from .config import node_list, steem_curator, steem_active_key
 from .logger_config import logger
 from datetime import datetime, timezone
 from .instance import published_posts, last_check_time
 from beem.transactionbuilder import TransactionBuilder
-from beem.amount import Amount
+from beembase.operations import Transfer
+from .db import db, Delegator
 
 class Blockchain:
     def __init__(self, mode='irreversible'):
@@ -265,68 +266,78 @@ class Blockchain:
                 else:
                     raise Exception(response.reason)
                 
-    def get_delegators(self, account_name):
-        hive = Hive(node=self.hive_node)
-        account = Account(account_name, steem_instance=hive)
-        delegations = account.get_vesting_delegations()
-        delegators = [delegation['delegator'] for delegation in delegations]
-        return delegators
+    def get_steem_delegators(self):
+        for node_url in self.node_urls.get('steem'):
+            if not self.ping_server(node_url):
+                logger.error(f"Impossibile raggiungere il server: {node_url}")
+                continue
 
-    def send_confirmation(self, to_account, amount="0.001", asset="STEEM"):
-        hive = Hive(node=self.hive_node)
-        tx = TransactionBuilder(steem_instance=hive)
-        tx.append_transfer(to_account, Amount(amount, asset, steem_instance=hive), memo="Confirmation")
-        tx.sign()
-        tx.broadcast()
+        stm = Steem(node=node_url)
+        acc = Account(steem_curator, blockchain_instance=stm)
+        max_op_count = acc.virtual_op_count()
 
-    def monitor_delegations(self, account_name):
-        hive = Hive(node=self.hive_node)
-        account = Account(account_name, steem_instance=hive)
-        previous_delegators = set(self.get_delegators(account_name))
+        delegate_vesting_shares_ops = []  # Lista per memorizzare le operazioni di delega
 
-        while True:
-            current_delegators = set(self.get_delegators(account_name))
-            new_delegators = current_delegators - previous_delegators
+        # Itera sugli ultimi 100 eventi virtuali
+        for h in acc.history(start=max_op_count - 99, stop=max_op_count, use_block_num=False):
+            operation_type = h['type']
+            if operation_type == 'delegate_vesting_shares':
+                delegate_vesting_shares_ops.append(h)
 
-            for delegator in new_delegators:
-                self.send_confirmation(delegator)
+        print("Operazioni di delega:", delegate_vesting_shares_ops)
 
-            previous_delegators = current_delegators
-        
+        # Check for new delegators
+        new_delegators = self.check_new_delegators(delegate_vesting_shares_ops)
+
+        # Save new delegators to the database
+        self.save_new_delegators(new_delegators)
+
+        # Send confirmation to new delegators
+        self.send_confirmation_to_new_delegators(new_delegators, stm)
+
+        return delegate_vesting_shares_ops
+
+    def check_new_delegators(self, delegate_ops):
+        new_delegators = []
+        for op in delegate_ops:
+            delegator = op['delegator']
+            # Verifica se il delegatore è già nel database
+            if not Delegator.query.filter_by(username=delegator).first():
+                new_delegators.append(op)
+        return new_delegators
+
+    def save_new_delegators(self, new_delegators):
+        for op in new_delegators:
+            delegator = op['delegator']
+            delegated_amount = op['vesting_shares']  # Quantità di STEEM delegata
+            # Salva il nuovo delegatore nel database
+            delegator_entry = Delegator(username=delegator)
+            db.session.add(delegator_entry)
+        db.session.commit()
+        print(f"Nuovi delegatori salvati nel database: {[op['delegator'] for op in new_delegators]}")
+
+    def send_confirmation_to_new_delegators(self, new_delegators, stm):
+        for op in new_delegators:
+            delegator = op['delegator']
+            try:
+                # Crea la transazione di trasferimento
+                tx = TransactionBuilder(blockchain_instance=stm)
+                tx.appendOps(Transfer(
+                    **{
+                        'from': steem_curator,
+                        'to': delegator,
+                        'amount': '0.001 STEEM',
+                        'memo': 'Grazie per la delega!'
+                    }
+                ))
+                tx.appendWif(steem_active_key)
+                tx.sign()
+                tx.broadcast()
+                print(f"Inviati 0.001 STEEM a {delegator} per confermare la delega.")
+            except Exception as e:
+                print(f"Errore durante l'invio di 0.001 STEEM a {delegator}: {e}")
+
 ##################################################################################### Community command
-        
-    def get_steem_community(self, community_name):
-        steem = Steem(node=steem_node)
-        community = Communities(blockchain_instance=steem)
-        result = community.search_title(community_name)
-        return result
-    
-    def get_steem_community_post(self, community):
-        steem = Steem(node=steem_node)
-        community = Community(community, blockchain_instance=steem)
-        result = community.get_ranked_posts(limit=100)
-        return result
-    
-    def subscribe_community(self, community, username, wif):   
-        stm = Steem(keys=[wif], node=steem_node)  
-        community = Community(community, blockchain_instance=stm)
-        result = community.subscribe(username)
-        return True
-
-    def unsubscribe_community(self, community, username, wif):        
-        stm = Steem(keys=[wif], node=steem_node)  
-        community = Community(community, blockchain_instance=stm)
-        result = community.unsubscribe(username)
-        return True
-
-    def get_account_sub(self, username):
-        community = []
-        steem = Steem(node=steem_node)
-        account = Account(username, steem_instance=steem)
-        results = account.list_all_subscriptions()
-        for result in results:
-            community.append(result[0])
-        return community
     
     def create_account(self, new_account_name: str):
         new_account_name = new_account_name.lower()

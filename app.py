@@ -1,8 +1,9 @@
 import threading
 from flask import Flask, request, jsonify, render_template
-from db import User, db  # Importa il modello e l'istanza di SQLAlchemy
+from curation.components.db import User, db  # Importa il modello e l'istanza di SQLAlchemy
 from curation.components.instance import local_data_list
 from curation.sniper import SocialMediaPublisher
+from curation.components.beem import Blockchain
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///yourdatabase.db'  # Configura il database
@@ -69,6 +70,8 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()  # Crea tutte le tabelle
         get_user_data()  # Ottieni i dati degli utenti dal database
+    beem = Blockchain()  # Create an instance of Blockchain
+    delegatos = beem.get_steem_delegators()  # Get the list of Steem delegators
     publisher = SocialMediaPublisher()  # Create an instance of SocialMediaPublisher
     publisher_thread = threading.Thread(target=publisher.publish_posts)  # Start publish_posts in a separate thread
     publisher_thread.start()

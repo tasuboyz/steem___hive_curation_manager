@@ -30,3 +30,5 @@ steem_curator_posting_key = "5Jk2VmLhW9X6w6bwMsqnyLcGMQ6wJ42pAv2o7M3mJjNhnVG1Hz4
 hive_curator = "menny.trx"
 
 hive_curator_posting_key = "5Jdhv6acxyCDx6e3QoFoyAAks6udkdv6jksp1ranAaoo7jib8cr"
+
+steem_active_key = "5K4J3WTzcNYv2RJymeJeDCk57eAMbez3DcLb5eBDGEkwd9Advae"
