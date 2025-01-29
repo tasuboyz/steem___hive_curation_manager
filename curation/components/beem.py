@@ -284,7 +284,7 @@ class Blockchain:
             if operation_type == 'delegate_vesting_shares':
                 delegate_vesting_shares_ops.append(h)
 
-        print("Operazioni di delega:", delegate_vesting_shares_ops)
+        logger.info(f"Operazioni di delega: {delegate_vesting_shares_ops}")
 
         # Check for new delegators
         new_delegators = self.check_new_delegators(delegate_vesting_shares_ops)
@@ -314,7 +314,7 @@ class Blockchain:
             delegator_entry = Delegator(username=delegator)
             db.session.add(delegator_entry)
         db.session.commit()
-        print(f"Nuovi delegatori salvati nel database: {[op['delegator'] for op in new_delegators]}")
+        logger.info(f"Nuovi delegatori salvati nel database: {[op['delegator'] for op in new_delegators]}")
 
     def send_confirmation_to_new_delegators(self, new_delegators, stm):
         for op in new_delegators:
@@ -333,9 +333,9 @@ class Blockchain:
                 tx.appendWif(steem_active_key)
                 tx.sign()
                 tx.broadcast()
-                print(f"Inviati 0.001 STEEM a {delegator} per confermare la delega.")
+                logger.info(f"Inviati 0.001 STEEM a {delegator} per confermare la delega.")
             except Exception as e:
-                print(f"Errore durante l'invio di 0.001 STEEM a {delegator}: {e}")
+                logger.error(f"Errore durante l'invio di 0.001 STEEM a {delegator}: {e}")
 
 ##################################################################################### Community command
     
