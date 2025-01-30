@@ -6,6 +6,7 @@ from curation.sniper import SocialMediaPublisher
 from curation.components.beem import Blockchain
 from curation.utils.data_loader import get_user_data
 from apscheduler.schedulers.background import BackgroundScheduler
+from curation.action import start_monitoring
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///yourdatabase.db'  # Configura il database
@@ -77,6 +78,7 @@ if __name__ == '__main__':
         get_user_data() 
         delegatos = beem.get_steem_delegators()  # Ottieni la lista dei delegatori Steem
 
+    start_monitoring()  # Avvia il monitoraggio dei dati    
     publisher = SocialMediaPublisher()  # Crea un'istanza di SocialMediaPublisher
     publisher_thread = threading.Thread(target=publisher.publish_posts)  # Avvia publish_posts in un thread separato
     publisher_thread.start()

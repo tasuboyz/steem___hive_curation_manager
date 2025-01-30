@@ -266,76 +266,93 @@ class Blockchain:
                 else:
                     raise Exception(response.reason)
                 
+############################################################################################# Delegators
+                
     def get_steem_delegators(self):
         for node_url in self.node_urls.get('steem'):
             if not self.ping_server(node_url):
-                logger.error(f"Impossibile raggiungere il server: {node_url}")
+                logger.error(f"Server non raggiungibile: {node_url}")
                 continue
 
-        stm = Steem(node=node_url)
-        acc = Account(steem_curator, blockchain_instance=stm)
-        max_op_count = acc.virtual_op_count()
+            stm = Steem(node=node_url)
+            acc = Account(steem_curator, blockchain_instance=stm)
+            
+            # Ottieni l'ultima operazione processata dal database
+            last_processed = Delegator.query.order_by(Delegator.timestamp.desc()).first()
+            virtual_op = acc.virtual_op_count() 
+            start_from = virtual_op - 20 if not last_processed else None
 
-        delegate_vesting_shares_ops = []  # Lista per memorizzare le operazioni di delega
+            delegate_ops = []
+            for h in acc.history(start=start_from, stop=virtual_op, use_block_num=False):
+                if h['type'] == 'delegate_vesting_shares' and h['_id'] != getattr(last_processed, 'last_operation_id', None):
+                    delegate_ops.append(h)
 
-        # Itera sugli ultimi 100 eventi virtuali
-        for h in acc.history(start=max_op_count - 99, stop=max_op_count, use_block_num=False):
-            operation_type = h['type']
-            if operation_type == 'delegate_vesting_shares':
-                delegate_vesting_shares_ops.append(h)
+            logger.info(f"Operazioni rilevate: {len(delegate_ops)}")
 
-        logger.info(f"Operazioni di delega: {delegate_vesting_shares_ops}")
+            # Processa le modifiche
+            changes = self.process_delegation_changes(delegate_ops)
+            self.save_delegation_changes(changes)
+            self.send_confirmation(changes, stm)
 
-        # Check for new delegators
-        new_delegators = self.check_new_delegators(delegate_vesting_shares_ops)
+            return changes
 
-        # Save new delegators to the database
-        self.save_new_delegators(new_delegators)
-
-        # Send confirmation to new delegators
-        self.send_confirmation_to_new_delegators(new_delegators, stm)
-
-        return delegate_vesting_shares_ops
-
-    def check_new_delegators(self, delegate_ops):
-        new_delegators = []
-        for op in delegate_ops:
+    def process_delegation_changes(self, operations):
+        changes = []
+        for op in operations:
             delegator = op['delegator']
-            # Verifica se il delegatore è già nel database
-            if not Delegator.query.filter_by(username=delegator).first():
-                new_delegators.append(op)
-        return new_delegators
+            amount = op['vesting_shares']
+            entry = Delegator.query.filter_by(username=delegator).first()
 
-    def save_new_delegators(self, new_delegators):
-        for op in new_delegators:
+            # Controlla se è una nuova delegazione o una modifica
+            if not entry:
+                changes.append({'type': 'new', 'data': op})
+            elif entry.vesting_shares != amount:
+                changes.append({'type': 'update', 'data': op})
+        
+        return changes
+
+    def save_delegation_changes(self, changes):
+        for change in changes:
+            op = change['data']
             delegator = op['delegator']
-            delegated_amount = op['vesting_shares']  # Quantità di STEEM delegata
-            # Salva il nuovo delegatore nel database
-            delegator_entry = Delegator(username=delegator)
-            db.session.add(delegator_entry)
+            entry = Delegator.query.filter_by(username=delegator).first()
+
+            if change['type'] == 'new':
+                new_entry = Delegator(
+                    username=delegator,
+                    vesting_shares=op['vesting_shares']['amount'],
+                    last_operation_id=op['_id'],
+                    timestamp=datetime.strptime(op['timestamp'], '%Y-%m-%dT%H:%M:%S')
+                )
+                db.session.add(new_entry)
+            else:
+                entry.vesting_shares = op['vesting_shares']
+                entry.last_operation_id = op['_id']
+
         db.session.commit()
-        logger.info(f"Nuovi delegatori salvati nel database: {[op['delegator'] for op in new_delegators]}")
 
-    def send_confirmation_to_new_delegators(self, new_delegators, stm):
-        for op in new_delegators:
-            delegator = op['delegator']
+    def send_confirmation(self, changes, stm):
+        for change in changes:
+            op = change['data']
             try:
-                # Crea la transazione di trasferimento
+                memo = "Grazie per la nuova delegazione!" if change['type'] == 'new' else "Grazie per aver aggiornato la tua delegazione!"
+                
                 tx = TransactionBuilder(blockchain_instance=stm)
                 tx.appendOps(Transfer(
                     **{
                         'from': steem_curator,
-                        'to': delegator,
+                        'to': op['delegator'],
                         'amount': '0.001 STEEM',
-                        'memo': 'Grazie per la delega!'
+                        'memo': memo
                     }
                 ))
                 tx.appendWif(steem_active_key)
                 tx.sign()
                 tx.broadcast()
-                logger.info(f"Inviati 0.001 STEEM a {delegator} per confermare la delega.")
+                
+                logger.info(f"Inviata conferma a {op['delegator']} per {change['type']}")
             except Exception as e:
-                logger.error(f"Errore durante l'invio di 0.001 STEEM a {delegator}: {e}")
+                logger.error(f"Errore invio a {op['delegator']}: {str(e)}")
 
 ##################################################################################### Community command
     
