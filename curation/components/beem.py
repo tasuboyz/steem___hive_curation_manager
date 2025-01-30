@@ -280,8 +280,8 @@ class Blockchain:
             # Ottieni l'ultima operazione processata dal database
             last_processed = Delegator.query.order_by(Delegator.timestamp.desc()).first()
             virtual_op = acc.virtual_op_count() 
-            start_from = virtual_op - 20 if not last_processed else None
-
+            start_from = virtual_op - 20
+            
             delegate_ops = []
             for h in acc.history(start=start_from, stop=virtual_op, use_block_num=False):
                 if h['type'] == 'delegate_vesting_shares' and h['_id'] != getattr(last_processed, 'last_operation_id', None):

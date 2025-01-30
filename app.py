@@ -77,8 +77,8 @@ if __name__ == '__main__':
         beem = Blockchain()  # Crea un'istanza di Blockchain
         get_user_data() 
         delegatos = beem.get_steem_delegators()  # Ottieni la lista dei delegatori Steem
-
-    start_monitoring()  # Avvia il monitoraggio dei dati    
+        start_monitoring()  # Avvia il monitoraggio dei dati    
+        
     publisher = SocialMediaPublisher()  # Crea un'istanza di SocialMediaPublisher
     publisher_thread = threading.Thread(target=publisher.publish_posts)  # Avvia publish_posts in un thread separato
     publisher_thread.start()

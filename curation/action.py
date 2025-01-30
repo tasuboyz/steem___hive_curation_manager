@@ -5,7 +5,7 @@ from .components.beem import Blockchain
 
 beem = Blockchain()
 
-def start_monitoring(self):
+def start_monitoring():
         logger.info("Avvio del monitoraggio delle deleghe...")
         while True:
             try:
@@ -16,7 +16,7 @@ def start_monitoring(self):
                 # Attendi prima del prossimo ciclo
                 time.sleep(60)
 
-def _run_check_cycle(self):
+def _run_check_cycle():
     """Esegue un singolo ciclo di controllo."""
     logger.info(f"Inizio nuovo ciclo di controllo alle {datetime.utcnow().isoformat()}")
     
