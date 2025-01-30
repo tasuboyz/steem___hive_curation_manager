@@ -2,19 +2,20 @@ from .components.logger_config import logger
 import time
 from datetime import datetime
 from .components.beem import Blockchain
+import asyncio
 
 beem = Blockchain()
 
 def start_monitoring():
-        logger.info("Avvio del monitoraggio delle deleghe...")
-        while True:
-            try:
-                _run_check_cycle()
-            except Exception as e:
-                logger.error(f"Errore durante il ciclo di monitoraggio: {str(e)}")
-            finally:
-                # Attendi prima del prossimo ciclo
-                time.sleep(60)
+    logger.info("Avvio del monitoraggio delle deleghe...")
+    while True:
+        try:
+            _run_check_cycle()
+        except Exception as e:
+            logger.error(f"Errore durante il ciclo di monitoraggio: {str(e)}")
+        finally:
+            # Attendi prima del prossimo ciclo
+            time.sleep(60)
 
 def _run_check_cycle():
     """Esegue un singolo ciclo di controllo."""

@@ -6,7 +6,9 @@ from curation.sniper import SocialMediaPublisher
 from curation.components.beem import Blockchain
 from curation.utils.data_loader import get_user_data
 from apscheduler.schedulers.background import BackgroundScheduler
-from curation.action import start_monitoring
+from curation.action import _run_check_cycle
+from curation.components.logger_config import logger
+import time
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///yourdatabase.db'  # Configura il database
@@ -70,15 +72,28 @@ def run_scheduler():
         scheduler.add_job(func=get_user_data, trigger="interval", seconds=600)  # Aggiorna ogni 10 minuti
         scheduler.start()
         return scheduler
-
-if __name__ == '__main__':
+    
+def create_app():
     with app.app_context():
-        db.create_all()  # Crea tutte le tabelle
-        beem = Blockchain()  # Crea un'istanza di Blockchain
-        get_user_data() 
-        delegatos = beem.get_steem_delegators()  # Ottieni la lista dei delegatori Steem
-        start_monitoring()  # Avvia il monitoraggio dei dati    
-        
+        db.create_all()
+        get_user_data()
+    return app
+
+def start_monitoring(app):
+    """Avvia il monitoraggio delle deleghe con contesto applicazione"""
+    with app.app_context():
+        logger.info("Avvio del monitoraggio delle deleghe...")
+        while True:
+            try:
+                _run_check_cycle()
+            except Exception as e:
+                logger.error(f"Errore durante il ciclo di monitoraggio: {str(e)}")
+            time.sleep(60)
+    
+if __name__ == '__main__':
+    app = create_app()
+    monitor_thread = threading.Thread(target=start_monitoring, args=(app,), daemon=True)
+    monitor_thread.start()
     publisher = SocialMediaPublisher()  # Crea un'istanza di SocialMediaPublisher
     publisher_thread = threading.Thread(target=publisher.publish_posts)  # Avvia publish_posts in un thread separato
     publisher_thread.start()
