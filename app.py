@@ -8,6 +8,7 @@ from curation.utils.data_loader import get_user_data
 from apscheduler.schedulers.background import BackgroundScheduler
 from curation.action import _run_check_cycle
 from curation.components.logger_config import logger
+from curation.components.config import TEST
 import time
 
 app = Flask(__name__)
@@ -99,7 +100,11 @@ if __name__ == '__main__':
     publisher_thread.start()
 
     try:
-        app.run(debug=True, port= 8088, host='0.0.0.0')
+        if TEST:
+            debug = False
+        else:
+            debug = True
+        app.run(debug=debug, port= 8088, host='0.0.0.0')
     except KeyboardInterrupt:
         # scheduler.shutdown()  # Ferma il scheduler quando l'app viene chiusa
         print("Scheduler shut down successfully.")
