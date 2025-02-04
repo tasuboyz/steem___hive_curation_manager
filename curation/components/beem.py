@@ -421,7 +421,7 @@ class Blockchain:
         return author
     
     def get_hive_permlink(self, post_url):
-        for node_url in self.node_urls.get('steem'):
+        for node_url in self.node_urls.get('hive'):
             if not self.ping_server(node_url):
                 logger.error(f"Impossibile raggiungere il server: {node_url}")
                 continue  # Prova il nodo successivo
@@ -431,7 +431,7 @@ class Blockchain:
         return permlink
     
     def get_hive_author(self, post_url):
-        for node_url in self.node_urls.get('steem'):
+        for node_url in self.node_urls.get('hive'):
             if not self.ping_server(node_url):
                 logger.error(f"Impossibile raggiungere il server: {node_url}")
                 continue  # Prova il nodo successivo

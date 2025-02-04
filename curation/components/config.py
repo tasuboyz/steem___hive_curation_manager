@@ -24,7 +24,7 @@ log_file_path = "log.txt"
 
 steem_domain ="https://steemit.com"
 
-hive_domain ="https://hive.blog"
+hive_domain ="https://peakd.com"
 
 admin_id = "1026795763"
 

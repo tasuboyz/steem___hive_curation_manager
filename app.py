@@ -95,7 +95,7 @@ if __name__ == '__main__':
     monitor_thread = threading.Thread(target=start_monitoring, args=(app,), daemon=True)
     monitor_thread.start()
     publisher = SocialMediaPublisher()  # Crea un'istanza di SocialMediaPublisher
-    publisher_thread = threading.Thread(target=publisher.publish_posts)  # Avvia publish_posts in un thread separato
+    publisher_thread = threading.Thread(target=publisher.publish_posts, daemon=True)  # Avvia publish_posts in un thread separato
     publisher_thread.start()
 
     try:
