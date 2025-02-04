@@ -10,10 +10,12 @@ from .components.logger_config import logger
 from .components.config import (
     steem_domain, hive_domain, admin_id, TOKEN, 
     steem_curator, steem_curator_posting_key, 
-    hive_curator, hive_curator_posting_key
+    hive_curator, hive_curator_posting_key,
+    TEST
 )
 from .components.beem import Blockchain
 from .components.instance import local_data_list
+
 
 class SocialMediaPublisher:
     def __init__(self):
@@ -66,10 +68,13 @@ class SocialMediaPublisher:
         
         if voting_power > 89:
             time.sleep(vote_delay * 60)
-            if platform == "steem":
-                self.beem.like_steem_post(voter=steem_curator, voted=author, permlink=permlink, private_posting_key=steem_curator_posting_key, weight=vote_weight)
+            if TEST:
+                logger.info(f"Voting: {author} {permlink} {vote_weight}")
             else:
-                self.beem.like_hive_post(voter=hive_curator, voted=author, permlink=permlink, private_posting_key=hive_curator_posting_key, weight=vote_weight)
+                if platform == "steem":
+                    self.beem.like_steem_post(voter=steem_curator, voted=author, permlink=permlink, private_posting_key=steem_curator_posting_key, weight=vote_weight)
+                else:
+                    self.beem.like_hive_post(voter=hive_curator, voted=author, permlink=permlink, private_posting_key=hive_curator_posting_key, weight=vote_weight)
             self.send_telegram_message(TOKEN, admin_id, "Voted!")
         else:
             self.send_telegram_message(TOKEN, admin_id, "Not Voted!")

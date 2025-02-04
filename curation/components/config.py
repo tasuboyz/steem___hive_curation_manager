@@ -5,6 +5,8 @@ import logging
 
 load_dotenv()
 
+TEST = True
+
 node_list = {
         "steem": [
             "https://api.steemit.com",
@@ -18,7 +20,10 @@ node_list = {
         ]
     }
 
-log_level = logging.INFO
+if TEST:
+    log_level = logging.INFO
+else:
+    log_level = logging.ERROR
 
 log_file_path = "log.txt"
 
