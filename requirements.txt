@@ -3,4 +3,4 @@ flask_sqlalchemy
 beem
 requests
 python-dotenv
-APScheduler
+schedule
