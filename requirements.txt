@@ -4,3 +4,5 @@ beem
 requests
 python-dotenv
 schedule
+XGBoost
+apscheduler

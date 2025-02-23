@@ -23,3 +23,19 @@ class Delegator(db.Model):
 
     def __repr__(self):
         return f'<Delegator  {self.username}>'
+
+class AuthorStats(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    platform = db.Column(db.String(10), nullable=False)  # 'steem' or 'hive'
+    author = db.Column(db.String(80), nullable=False)
+    avg_efficiency = db.Column(db.Float, default=0.0)
+    avg_payout = db.Column(db.Float, default=0.0)
+    reputation = db.Column(db.Float, default=0.0)
+    post_count = db.Column(db.Integer, default=0)
+    success_rate = db.Column(db.Float, default=0.0)  # Percentuale di post con efficiency > 50
+    last_updated = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (db.UniqueConstraint('platform', 'author', name='unique_author_platform'),)
+
+    def __repr__(self):
+        return f'<AuthorStats {self.platform}:{self.author}>'

@@ -1,6 +1,7 @@
 from beem import Steem, Hive
 from beem.account import Account
 from beem.comment import Comment
+from beem.vote import Vote
 from beem.community import Communities, Community
 import requests
 import json
@@ -11,6 +12,7 @@ from .instance import published_posts, last_check_time
 from beem.transactionbuilder import TransactionBuilder
 from beembase.operations import Transfer
 from .db import db, Delegator
+from ..utils.process_data import update_efficiency_average, update_payout_average
 
 class Blockchain:
     def __init__(self, mode='irreversible'):
@@ -464,3 +466,118 @@ class Blockchain:
         regenerated_vp = (diff_seconds / 432000) * 100  # 432000 secondi = 5 giorni
         current_vp = min(voting_power + regenerated_vp, 100)
         return current_vp
+    
+    def convert_vests_to_power(self, amount, blockchain: str):
+        """Convert vesting shares to HP/SP in base alla blockchain."""
+        try:
+            blockchain_instance = self._get_blockchain_instance(blockchain)
+            if not blockchain_instance:
+                return
+            return blockchain_instance.vests_to_sp(float(amount))
+        except Exception as e:
+            logger.error(f"Errore nella conversione da vesting shares a power: {e}")
+            return 0
+
+    def _get_blockchain_instance(self, blockchain: str):
+        blockchain = blockchain.lower()
+        for node_url in self.node_urls.get(blockchain):
+            if self.ping_server(node_url):
+                if blockchain == 'steem':
+                    return Steem(node=node_url)
+                elif blockchain == 'hive':
+                    return Hive(node=node_url)
+            else:
+                logger.error(f"Impossibile raggiungere il server: {node_url}")
+        return None
+
+    def get_account_history(self, curator, blockchain: str, limit: int):
+        blockchain = blockchain.lower()
+        for node_url in self.node_urls.get(blockchain):
+            if self.ping_server(node_url):
+                if blockchain == 'steem':
+                    blockchain_instance = Steem(node="https://api.moecki.online")
+                elif blockchain == 'hive':
+                    blockchain_instance = Hive(node=node_url)
+        account = Account(account, blockchain_instance=blockchain_instance)
+
+        author_efficiency_dict = {}
+        author_payout_dict = {}
+        data = {
+            'voting_power': [], 'vote_delay': [], 'reward': [],
+            'efficiency': [], 'author_avg_efficiency': [], 'success': [],
+            'author_reputation': [], 'Post': [], 'Author': [],
+            'like_efficiency': [], 'author_avg_payout': []
+        }
+
+        count = 0
+        for h in account.history_reverse():
+            if h['type'] == 'curation_reward':
+                try:
+                    author = h.get('comment_author') or h.get('author')
+                    permlink = h.get('comment_permlink') or h.get('permlink')
+                    post_identifier = f"@{author}/{permlink}"
+                    post = self.get_post_data(post_identifier, blockchain)
+                    vote_identifier = f"@{post_identifier}|{curator}"
+                    vote = self.get_vote_data(vote_identifier, blockchain)
+                    author_reputation = post['author_reputation']
+                    author_payout_token_dollar = float(str(post['author_payout_value']).split()[0])
+
+                    avg_payout = update_payout_average(author, author_payout_token_dollar, author_payout_dict)
+
+                    # Calculate times
+                    op_time = datetime.strptime(h['timestamp'], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=timezone.utc)
+                    post_creation_time = post['created']
+
+                    # Get vote data
+                    reward_amount_vests = float(h['reward']['amount']) / 1e6
+                    reward_amount = self.convert_vests_to_power(reward_amount_vests, blockchain)
+                    
+                    vote_identifier = f"{post_identifier}|{curator}"
+                    vote = self.get_vote_data(vote_identifier)
+                    vote_time = vote.time
+                    vote_percent = vote['percent'] / 100
+                    age = (vote_time - post_creation_time).total_seconds()
+                    
+                    # Calculate weights and efficiency
+                    weight = vote.weight / (100 if isinstance(blockchain, Steem) else 1000000000)
+                    teoric_reward = self.convert_vests_to_power(weight, blockchain)
+                    vote_value = teoric_reward * 2
+                    efficiency = (((reward_amount - teoric_reward) / teoric_reward) * 100) if vote_value > 0 else 0
+                    
+                    # Update author efficiency
+                    avg_efficiency = update_efficiency_average(author, efficiency, author_efficiency_dict)
+
+                    post_data = {
+                        'voting_power': vote_percent,
+                        'vote_delay': age / 60,  # minutes
+                        'reward': reward_amount,
+                        'efficiency': efficiency,
+                        'author_avg_efficiency': avg_efficiency,
+                        'success': 1 if efficiency > 50 else 0,
+                        'author_reputation': author_reputation,
+                        'Post': post_identifier,
+                        'Author': author,
+                        'like_efficiency': efficiency,
+                        'author_avg_payout': avg_payout
+                    }
+
+                    for key, value in post_data.items():
+                        data[key].append(value)
+
+                    count += 1
+                    if count >= limit:
+                        break
+                except Exception as e:
+                    logger.error(f"Error processing: {str(e)}")
+
+    def get_post_data(self, post_identifier, blockchain: str):
+        blockchain_instance = self._get_blockchain_instance(blockchain)
+        if not blockchain_instance:
+            return
+        return Comment(post_identifier, blockchain_instance=blockchain_instance)
+    
+    def get_vote_data(self, vote_identifier, blockchain: str):
+        blockchain_instance = self._get_blockchain_instance(blockchain)
+        if not blockchain_instance:
+            return
+        return Vote(vote_identifier, blockchain_instance=blockchain)

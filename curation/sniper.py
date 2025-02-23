@@ -20,6 +20,7 @@ from .components.instance import local_data_list
 class SocialMediaPublisher:
     def __init__(self):
         self.beem = Blockchain()
+        self.beem.get_account_history("tasuboyz", "steem", 1000)
         self.published_links = {"steem": set(), "hive": set()}
     
     def update_user_data(self):
