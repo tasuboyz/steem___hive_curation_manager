@@ -67,7 +67,14 @@ class SocialMediaPublisher:
         permlink = self.beem.get_steem_permlink(post_link) if platform == "steem" else self.beem.get_hive_permlink(post_link)
         
         if voting_power > 89:
-            time.sleep(vote_delay * 60)
+            post = self.beem.get_comment(author=author, permalink=permlink, blockchain=platform)
+            created_time = post['created']
+            target_vote_time = created_time + timedelta(minutes=vote_delay)
+            time_until_vote = target_vote_time - datetime.now(timezone.utc)
+            minutes_until_vote = time_until_vote.total_seconds() / 60
+            if minutes_until_vote > 0:
+                logger.info(f"Waiting {minutes_until_vote:.1f} minutes before voting...")
+                time.sleep(minutes_until_vote * 60)
             if TEST:
                 logger.info(f"Voting: {author} {permlink} {vote_weight}")
             else:

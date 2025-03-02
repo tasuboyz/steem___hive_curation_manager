@@ -452,9 +452,16 @@ class Blockchain:
         result = account.get_blog(start_entry_id=0, limit=1, raw_data=False, short_entries=False, account=None)
         return result
     
-    def get_steem_comment(self, author, permalink):
-        steem = Steem(node=steem_node) 
-        comment = Comment(f"@{author}/{permalink}", blockchain_instance=steem)
+    def get_comment(self, author, permalink, blockchain: str):
+        for node_url in self.node_urls.get(blockchain):
+            if not self.ping_server(node_url):
+                logger.error(f"Impossibile raggiungere il server: {node_url}")
+                continue  # Prova il nodo successivo
+        if blockchain == 'steem':
+            instance = Steem(node=node_url)
+        else:
+            instance = Hive(node=node_url)
+        comment = Comment(f"@{author}/{permalink}", blockchain_instance=instance)
         return comment
     
     def calculate_voting_power(self, timestamp_last_vote, voting_power):

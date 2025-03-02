@@ -4,3 +4,4 @@ beem
 requests
 python-dotenv
 schedule
+APScheduler
