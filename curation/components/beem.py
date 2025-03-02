@@ -4,10 +4,13 @@ from beem.comment import Comment
 from beem.community import Communities, Community
 import requests
 import json
-from .config import node_list
+from .config import node_list, steem_curator, steem_active_key
 from .logger_config import logger
 from datetime import datetime, timezone
 from .instance import published_posts, last_check_time
+from beem.transactionbuilder import TransactionBuilder
+from beembase.operations import Transfer
+from .db import db, Delegator
 
 class Blockchain:
     def __init__(self, mode='irreversible'):
@@ -262,41 +265,96 @@ class Blockchain:
                     return data
                 else:
                     raise Exception(response.reason)
+                
+############################################################################################# Delegators
+                
+    def get_steem_delegators(self):
+        for node_url in self.node_urls.get('steem'):
+            if not self.ping_server(node_url):
+                logger.error(f"Server non raggiungibile: {node_url}")
+                continue
+
+            stm = Steem(node=node_url)
+            acc = Account(steem_curator, blockchain_instance=stm)
+            
+            # Ottieni l'ultima operazione processata dal database
+            last_processed = Delegator.query.order_by(Delegator.timestamp.desc()).first()
+            virtual_op = acc.virtual_op_count() 
+            start_from = virtual_op - 20
+            
+            delegate_ops = []
+            for h in acc.history(start=start_from, stop=virtual_op, use_block_num=False):
+                if h['type'] == 'delegate_vesting_shares' and h['_id'] != getattr(last_processed, 'last_operation_id', None):
+                    delegate_ops.append(h)
+
+            logger.info(f"Operazioni rilevate: {len(delegate_ops)}")
+
+            # Processa le modifiche
+            changes = self.process_delegation_changes(delegate_ops)
+            self.save_delegation_changes(changes)
+            self.send_confirmation(changes, stm)
+
+            return changes
+
+    def process_delegation_changes(self, operations):
+        changes = []
+        for op in operations:
+            delegator = op['delegator']
+            amount = op['vesting_shares']
+            entry = Delegator.query.filter_by(username=delegator).first()
+
+            # Controlla se è una nuova delegazione o una modifica
+            if not entry:
+                changes.append({'type': 'new', 'data': op})
+            elif entry.vesting_shares != amount:
+                changes.append({'type': 'update', 'data': op})
         
+        return changes
+
+    def save_delegation_changes(self, changes):
+        for change in changes:
+            op = change['data']
+            delegator = op['delegator']
+            entry = Delegator.query.filter_by(username=delegator).first()
+
+            if change['type'] == 'new':
+                new_entry = Delegator(
+                    username=delegator,
+                    vesting_shares=op['vesting_shares']['amount'],
+                    last_operation_id=op['_id'],
+                    timestamp=datetime.strptime(op['timestamp'], '%Y-%m-%dT%H:%M:%S')
+                )
+                db.session.add(new_entry)
+            else:
+                entry.vesting_shares = op['vesting_shares']
+                entry.last_operation_id = op['_id']
+
+        db.session.commit()
+
+    def send_confirmation(self, changes, stm):
+        for change in changes:
+            op = change['data']
+            try:
+                memo = "Grazie per la nuova delegazione!" if change['type'] == 'new' else "Grazie per aver aggiornato la tua delegazione!"
+                
+                tx = TransactionBuilder(blockchain_instance=stm)
+                tx.appendOps(Transfer(
+                    **{
+                        'from': steem_curator,
+                        'to': op['delegator'],
+                        'amount': '0.001 STEEM',
+                        'memo': memo
+                    }
+                ))
+                tx.appendWif(steem_active_key)
+                tx.sign()
+                tx.broadcast()
+                
+                logger.info(f"Inviata conferma a {op['delegator']} per {change['type']}")
+            except Exception as e:
+                logger.error(f"Errore invio a {op['delegator']}: {str(e)}")
+
 ##################################################################################### Community command
-        
-    def get_steem_community(self, community_name):
-        steem = Steem(node=steem_node)
-        community = Communities(blockchain_instance=steem)
-        result = community.search_title(community_name)
-        return result
-    
-    def get_steem_community_post(self, community):
-        steem = Steem(node=steem_node)
-        community = Community(community, blockchain_instance=steem)
-        result = community.get_ranked_posts(limit=100)
-        return result
-    
-    def subscribe_community(self, community, username, wif):   
-        stm = Steem(keys=[wif], node=steem_node)  
-        community = Community(community, blockchain_instance=stm)
-        result = community.subscribe(username)
-        return True
-
-    def unsubscribe_community(self, community, username, wif):        
-        stm = Steem(keys=[wif], node=steem_node)  
-        community = Community(community, blockchain_instance=stm)
-        result = community.unsubscribe(username)
-        return True
-
-    def get_account_sub(self, username):
-        community = []
-        steem = Steem(node=steem_node)
-        account = Account(username, steem_instance=steem)
-        results = account.list_all_subscriptions()
-        for result in results:
-            community.append(result[0])
-        return community
     
     def create_account(self, new_account_name: str):
         new_account_name = new_account_name.lower()
@@ -363,7 +421,7 @@ class Blockchain:
         return author
     
     def get_hive_permlink(self, post_url):
-        for node_url in self.node_urls.get('steem'):
+        for node_url in self.node_urls.get('hive'):
             if not self.ping_server(node_url):
                 logger.error(f"Impossibile raggiungere il server: {node_url}")
                 continue  # Prova il nodo successivo
@@ -373,7 +431,7 @@ class Blockchain:
         return permlink
     
     def get_hive_author(self, post_url):
-        for node_url in self.node_urls.get('steem'):
+        for node_url in self.node_urls.get('hive'):
             if not self.ping_server(node_url):
                 logger.error(f"Impossibile raggiungere il server: {node_url}")
                 continue  # Prova il nodo successivo
@@ -394,9 +452,16 @@ class Blockchain:
         result = account.get_blog(start_entry_id=0, limit=1, raw_data=False, short_entries=False, account=None)
         return result
     
-    def get_steem_comment(self, author, permalink):
-        steem = Steem(node=steem_node) 
-        comment = Comment(f"@{author}/{permalink}", blockchain_instance=steem)
+    def get_comment(self, author, permalink, blockchain: str):
+        for node_url in self.node_urls.get(blockchain):
+            if not self.ping_server(node_url):
+                logger.error(f"Impossibile raggiungere il server: {node_url}")
+                continue  # Prova il nodo successivo
+        if blockchain == 'steem':
+            instance = Steem(node=node_url)
+        else:
+            instance = Hive(node=node_url)
+        comment = Comment(f"@{author}/{permalink}", blockchain_instance=instance)
         return comment
     
     def calculate_voting_power(self, timestamp_last_vote, voting_power):

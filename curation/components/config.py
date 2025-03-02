@@ -1,3 +1,12 @@
+
+import os
+from dotenv import load_dotenv
+import logging
+
+load_dotenv()
+
+TEST = True
+
 node_list = {
         "steem": [
             "https://api.steemit.com",
@@ -11,13 +20,16 @@ node_list = {
         ]
     }
 
-log_level = "INFO"
+if TEST:
+    log_level = logging.INFO
+else:
+    log_level = logging.ERROR
 
 log_file_path = "log.txt"
 
 steem_domain ="https://steemit.com"
 
-hive_domain ="https://hive.blog"
+hive_domain ="https://peakd.com"
 
 admin_id = "1026795763"
 
@@ -30,3 +42,10 @@ steem_curator_posting_key = "5Jk2VmLhW9X6w6bwMsqnyLcGMQ6wJ42pAv2o7M3mJjNhnVG1Hz4
 hive_curator = "menny.trx"
 
 hive_curator_posting_key = "5Jdhv6acxyCDx6e3QoFoyAAks6udkdv6jksp1ranAaoo7jib8cr"
+
+steem_active_key = "5K4J3WTzcNYv2RJymeJeDCk57eAMbez3DcLb5eBDGEkwd9Advae"
+
+class Config:
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URI', 'sqlite:///yourdatabase.db')
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SOCIAL_PUBLISHER_INTERVAL = 300  # 5 minuti
