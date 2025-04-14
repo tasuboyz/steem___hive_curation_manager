@@ -1,7 +1,6 @@
 import threading
 from flask import request, jsonify, render_template
 from curation.components.db import User, db  # Importa il modello e l'istanza di SQLAlchemy
-from curation.components.instance import local_data_list
 from curation.sniper import SocialMediaPublisher
 from curation.components.beem import Blockchain
 from curation.utils.data_loader import get_user_data

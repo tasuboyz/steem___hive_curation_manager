@@ -149,8 +149,8 @@ class SocialMediaPublisher:
                 # Aggiorna entrambi i set di tracking dei post
                 self.published_links[platform].update(new_links)
                 # Aggiungi anche i link completi con dominio al set globale
-                # for link in new_links:
-                #     published_posts.add(f"{domain}{link}")
+                for link in new_links:
+                    self.published_posts.add(f"{domain}{link}")
                 
                 # Processa solo i nuovi link
                 for link in new_links:
