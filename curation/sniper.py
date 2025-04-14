@@ -6,10 +6,7 @@ import threading
 import signal
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
-from collections import defaultdict
 from functools import wraps
-import sys
-
 from .components.logger_config import logger
 from .components.config import (
     steem_domain, hive_domain, admin_id, TOKEN, 
@@ -19,6 +16,8 @@ from .components.config import (
 )
 from .components.beem import Blockchain
 from .components.instance import local_data_list
+from curation.components.factory import create_app
+from curation.components.db import User
 
 
 class WatchdogTimer:
@@ -53,7 +52,7 @@ class WatchdogTimer:
             self.timer = None
             
     def get_elapsed_time(self):
-        """Restituisce il tempo trascorso dall'ultimo reset."""
+        """Restituisce il tempo trascorso dall'ultimo reset.""" 
         if self.last_reset_time:
             return (datetime.now() - self.last_reset_time).total_seconds()
         return 0
@@ -95,62 +94,75 @@ class SocialMediaPublisher:
     def __init__(self):
         self.beem = Blockchain()
         self.published_links = {"steem": set(), "hive": set()}
+        self.published_posts = set()
         self.watchdog = None
         self.status_check_interval = 600  # 10 minuti per controllo di stato
         self.operation_timeout = 30  # 30 secondi di timeout per operazioni
         self.last_process_time = datetime.now()
-        
+        self.app = create_app()
+
     def start_watchdog(self):
         """Avvia il sistema di watchdog."""
         self.watchdog = WatchdogTimer(900, self.handle_watchdog_timeout)  # 15 minuti di timeout
-        
+
     def handle_watchdog_timeout(self):
         """Gestisce il timeout del watchdog."""
         elapsed = (datetime.now() - self.last_process_time).total_seconds() / 60
         message = f"⚠️ ALLARME: Il sistema di curation è bloccato da {elapsed:.1f} minuti! Controllare immediatamente."
-        logger.critical(message)
+        self.log_and_notify(message, critical=True)
+        self.log_and_notify("Tentativo di auto-riavvio del sistema di curation...")
+
+    def log_and_notify(self, message, critical=False):
+        """Logga un messaggio e lo invia tramite Telegram."""
+        if critical:
+            logger.critical(message)
+        else:
+            logger.info(message)
         self.send_telegram_message(TOKEN, admin_id, message)
-        # Auto-restart per tentare di recuperare il sistema
-        self.send_telegram_message(TOKEN, admin_id, "Tentativo di auto-riavvio del sistema di curation...")
-        
+
     def update_user_data(self):
-        """Raccoglie gli utenti per piattaforma."""
+        """Raccoglie gli utenti per piattaforma dal database."""
         platform_users = {"steem": [], "hive": []}
-        for data in local_data_list:
-            platform_users[data['platform']].append(data['username'])
+        with self.app.app_context():
+            try:
+                users = User.query.all()
+                for user in users:
+                    if 'platform' in user.data:
+                        platform_users[user.data['platform']].append(user.username)
+            except Exception as e:
+                self.log_and_notify(f"Errore nell'aggiornamento dei dati utente: {str(e)}", critical=True)
+                # Fallback sui dati locali in caso di errore
+                for data in local_data_list:
+                    platform_users[data['platform']].append(data['username'])
         return platform_users
 
-    @timeout_handler(30)
     def process_posts(self, platform, usernames):
         """Elabora i post per una specifica piattaforma."""
         new_links = []
         domain = steem_domain if platform == "steem" else hive_domain
-        
+
         try:
             posts = self.beem.get_posts(usernames, platform)
+            new_links = [link for link in posts if link not in self.published_links[platform] and f"{domain}{link}" not in self.published_posts]
             
-            for link in posts:
-                if link not in self.published_links[platform]:
-                    new_links.append(link)
-                    self.published_links[platform].add(link)
-            
-            for link in new_links:
-                post_link = f"{domain}{link}"
-                self.handle_voting(platform, post_link)
+            if new_links:
+                # Aggiorna entrambi i set di tracking dei post
+                self.published_links[platform].update(new_links)
+                # Aggiungi anche i link completi con dominio al set globale
+                # for link in new_links:
+                #     published_posts.add(f"{domain}{link}")
                 
-            # Aggiorna il timestamp dell'ultima operazione completata
+                # Processa solo i nuovi link
+                for link in new_links:
+                    self.handle_voting(platform, f"{domain}{link}")
+
             self.last_process_time = datetime.now()
-            # Resetta il watchdog
             if self.watchdog:
                 self.watchdog.reset()
-                
+
         except Exception as e:
-            error_msg = f"Errore nell'elaborazione dei post per {platform}: {str(e)}"
-            logger.error(error_msg)
-            self.send_telegram_message(TOKEN, admin_id, f"⚠️ {error_msg}")
-            # Non rilanciare l'eccezione per evitare che il thread principale si blocchi
-    
-    @timeout_handler(60)  # Timeout più lungo per il processo di voto
+            self.log_and_notify(f"Errore nell'elaborazione dei post per {platform}: {str(e)}", critical=True)
+
     def handle_voting(self, platform, post_link):
         """Gestisce il processo di voto per un post."""
         try:
@@ -257,51 +269,31 @@ class SocialMediaPublisher:
         """Controlla e pubblica nuovi post periodicamente."""
         self.start_watchdog()
         last_status_check = datetime.now()
-        
+
         try:
             with ThreadPoolExecutor(max_workers=2) as executor:
                 while True:
-                    try:
-                        # Invia messaggio di stato periodico
-                        current_time = datetime.now()
-                        if (current_time - last_status_check).total_seconds() > self.status_check_interval:
-                            uptime_minutes = (current_time - self.last_process_time).total_seconds() / 60
-                            status_message = f"✅ Sistema di curation attivo. Ultima attività: {uptime_minutes:.1f} minuti fa."
-                            logger.info(status_message)
-                            self.send_telegram_message(TOKEN, admin_id, status_message)
-                            last_status_check = current_time
-                        
-                        # Aggiorna la lista di utenti
-                        platform_users = self.update_user_data()
-                        futures = {}
-                        
-                        # Processa i post per ogni piattaforma
-                        for platform, users in platform_users.items():
-                            if users:
-                                future = executor.submit(self.process_posts, platform, users)
-                                futures[future] = platform
-                        
-                        # Attendi il completamento dei task con gestione degli errori
-                        for future in as_completed(futures):
-                            platform = futures[future]
-                            try:
-                                future.result()
-                            except Exception as e:
-                                logger.error(f"Errore durante l'elaborazione dei post per {platform}: {str(e)}")
-                        
-                        # Reset del watchdog dopo ogni ciclo
-                        if self.watchdog:
-                            self.watchdog.reset()
-                        
-                        # Breve pausa tra i cicli
-                        time.sleep(5)
-                        
-                    except Exception as e:
-                        error_msg = f"Errore nel ciclo principale: {str(e)}"
-                        logger.error(error_msg)
-                        self.send_telegram_message(TOKEN, admin_id, f"⚠️ {error_msg}")
-                        time.sleep(30)  # Attendi prima di riprovare
-                        
+                    current_time = datetime.now()
+                    if (current_time - last_status_check).total_seconds() > self.status_check_interval:
+                        uptime_minutes = (current_time - self.last_process_time).total_seconds() / 60
+                        self.log_and_notify(f"✅ Sistema di curation attivo. Ultima attività: {uptime_minutes:.1f} minuti fa.")
+                        last_status_check = current_time
+
+                    platform_users = self.update_user_data()
+                    futures = {executor.submit(self.process_posts, platform, users): platform for platform, users in platform_users.items() if users}
+
+                    for future in as_completed(futures):
+                        platform = futures[future]
+                        try:
+                            future.result()
+                        except Exception as e:
+                            self.log_and_notify(f"Errore durante l'elaborazione dei post per {platform}: {str(e)}", critical=True)
+
+                    if self.watchdog:
+                        self.watchdog.reset()
+
+                    time.sleep(5)
+
         except KeyboardInterrupt:
             if self.watchdog:
                 self.watchdog.stop()
@@ -309,9 +301,7 @@ class SocialMediaPublisher:
         except Exception as e:
             if self.watchdog:
                 self.watchdog.stop()
-            error_msg = f"Errore critico nel sistema di curation: {str(e)}"
-            logger.critical(error_msg)
-            self.send_telegram_message(TOKEN, admin_id, f"🚨 {error_msg}")
+            self.log_and_notify(f"Errore critico nel sistema di curation: {str(e)}", critical=True)
 
     def send_telegram_message(self, bot_token, chat_id, message):
         try:
