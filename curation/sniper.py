@@ -95,11 +95,15 @@ class SocialMediaPublisher:
         self.beem = Blockchain()
         self.published_links = {"steem": set(), "hive": set()}
         self.published_posts = set()
+        self.processing_posts = set()  # Nuovo set per tracciare i post in fase di elaborazione
         self.watchdog = None
         self.status_check_interval = 600  # 10 minuti per controllo di stato
         self.operation_timeout = 30  # 30 secondi di timeout per operazioni
         self.last_process_time = datetime.now()
         self.app = create_app()
+        self.post_lock = threading.Lock()  # Lock per proteggere accesso ai set di post
+        self.status_lock = threading.Lock()  # Lock per prevenire invio di messaggi di stato duplicati
+        self.last_status_message_time = datetime.now()  # Timestamp dell'ultimo messaggio di stato inviato
 
     def start_watchdog(self):
         """Avvia il sistema di watchdog."""
@@ -148,17 +152,27 @@ class SocialMediaPublisher:
             logger.info(f"Recuperati {len(posts)} post totali per {platform}")
             
             # Filtra solo i post realmente nuovi
-            new_links = [link for link in posts if not self.is_post_processed(platform, link)]
+            new_links = []
+            for link in posts:
+                full_link = f"{domain}{link}"
+                with self.post_lock:
+                    if (link not in self.published_links[platform] and 
+                        full_link not in self.published_posts and
+                        full_link not in self.processing_posts):
+                        new_links.append(link)
+                        # Aggiungi immediatamente ai post in elaborazione
+                        self.processing_posts.add(full_link)
             
             # Registra quanti post nuovi sono stati trovati
             if new_links:
                 logger.info(f"Trovati {len(new_links)} nuovi post per {platform}")
                 
-                # Aggiorna entrambi i sistemi di tracciamento PRIMA di processare
+                # Aggiorna i sistemi di tracciamento e processa i post
                 for link in new_links:
                     full_link = f"{domain}{link}"
-                    self.published_links[platform].add(link)
-                    self.published_posts.add(full_link)
+                    with self.post_lock:
+                        self.published_links[platform].add(link)
+                        self.published_posts.add(full_link)
                     
                     # Processa solo i nuovi link uno alla volta
                     self.handle_voting(platform, full_link)
@@ -171,14 +185,18 @@ class SocialMediaPublisher:
             self.log_and_notify(f"Errore nell'elaborazione dei post per {platform}: {str(e)}", critical=True)
 
     def is_post_processed(self, platform, link):
-        """Verifica se un post è già stato elaborato."""
+        """Verifica se un post è già stato elaborato o è in fase di elaborazione."""
         domain = steem_domain if platform == "steem" else hive_domain
         full_link = f"{domain}{link}" if domain not in link else link
         
-        # Verifica in entrambi i sistemi di tracciamento
-        if link in self.published_links[platform] or full_link in self.published_posts:
-            logger.info(f"Post già elaborato: {full_link}")
-            return True
+        with self.post_lock:
+            # Verifica in tutti i sistemi di tracciamento
+            if (link in self.published_links[platform] or 
+                full_link in self.published_posts or 
+                full_link in self.processing_posts):
+                logger.info(f"Post già elaborato o in elaborazione: {full_link}")
+                return True
+        
         return False
 
     def handle_voting(self, platform, post_link):
@@ -274,11 +292,26 @@ class SocialMediaPublisher:
             # Aggiorna il timestamp dell'ultima operazione completata
             self.last_process_time = datetime.now()
             
+            # Rimuovi il post dal set di quelli in elaborazione
+            with self.post_lock:
+                if post_link in self.processing_posts:
+                    self.processing_posts.remove(post_link)
+            
         except TimeoutError:
+            # Rimuovi il post dal set di quelli in elaborazione anche in caso di errore
+            with self.post_lock:
+                if post_link in self.processing_posts:
+                    self.processing_posts.remove(post_link)
+                    
             error_msg = f"Timeout durante il processo di voto per {post_link}"
             logger.error(error_msg)
             self.send_telegram_message(TOKEN, admin_id, f"⚠️ {error_msg}")
         except Exception as e:
+            # Rimuovi il post dal set di quelli in elaborazione anche in caso di errore
+            with self.post_lock:
+                if post_link in self.processing_posts:
+                    self.processing_posts.remove(post_link)
+                    
             error_msg = f"Errore imprevisto durante il voto per {post_link}: {str(e)}"
             logger.error(error_msg)
             self.send_telegram_message(TOKEN, admin_id, f"⚠️ {error_msg}")
@@ -289,28 +322,34 @@ class SocialMediaPublisher:
         last_status_check = datetime.now()
 
         try:
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                while True:
-                    current_time = datetime.now()
-                    if (current_time - last_status_check).total_seconds() > self.status_check_interval:
-                        uptime_minutes = (current_time - self.last_process_time).total_seconds() / 60
-                        self.log_and_notify(f"✅ Sistema di curation attivo. Ultima attività: {uptime_minutes:.1f} minuti fa.")
-                        last_status_check = current_time
+            # Rimuovi ThreadPoolExecutor per evitare elaborazioni parallele degli stessi post
+            while True:
+                current_time = datetime.now()
+                
+                # Controlla se è il momento di inviare un messaggio di stato
+                if (current_time - last_status_check).total_seconds() > self.status_check_interval:
+                    with self.status_lock:
+                        # Verifica che non sia stato inviato un messaggio simile negli ultimi 30 secondi
+                        if (current_time - self.last_status_message_time).total_seconds() > 30:
+                            uptime_minutes = (current_time - self.last_process_time).total_seconds() / 60
+                            self.log_and_notify(f"✅ Sistema di curation attivo. Ultima attività: {uptime_minutes:.1f} minuti fa.")
+                            self.last_status_message_time = datetime.now()
+                            last_status_check = current_time
 
-                    platform_users = self.update_user_data()
-                    futures = {executor.submit(self.process_posts, platform, users): platform for platform, users in platform_users.items() if users}
-
-                    for future in as_completed(futures):
-                        platform = futures[future]
+                platform_users = self.update_user_data()
+                
+                # Elabora piattaforme sequenzialmente per evitare race conditions
+                for platform, users in platform_users.items():
+                    if users:
                         try:
-                            future.result()
+                            self.process_posts(platform, users)
                         except Exception as e:
                             self.log_and_notify(f"Errore durante l'elaborazione dei post per {platform}: {str(e)}", critical=True)
 
-                    if self.watchdog:
-                        self.watchdog.reset()
+                if self.watchdog:
+                    self.watchdog.reset()
 
-                    time.sleep(5)
+                time.sleep(5)
 
         except KeyboardInterrupt:
             if self.watchdog:
