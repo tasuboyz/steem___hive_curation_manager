@@ -106,13 +106,19 @@ class Blockchain:
                         post_age = current_time - post_time
                         age_minutes = post_age.total_seconds() / 60
                         last_check_time = self.last_check_time[username]
+                        # logger.info(f"Post trovato: {link} - {post_time} - età: {post_age}")
+                        # logger.info(f"Ultimo controllo per {username}: {self.last_check_time[username]}")
+                        # logger.info(f"Età del post: {post_age.total_seconds() / 60} minuti")
+                        # logger.info(f"Massimo tempo di pubblicazione: {max_age_minutes} minuti")
 
-                        # Non aggiungiamo immediatamente il post a published_posts
-                        # Lasciamo che sia la funzione process_posts in sniper.py a farlo
+                        if link in published_posts:
+                            logger.info(f"Il post è già stato pubblicato: {link}")
+                            continue
+
                         if age_minutes <= max_age_minutes:
                             logger.info(f"Post pubblicato di recente: {link}")
                             post_links.append(link)
-                            # Aggiorniamo solo il last_check_time
+                            published_posts.add(link)
                             self.last_check_time[username] = post_time
                         else:
                             logger.info(f"Post non pubblicato di recente: {link} - età: {post_age}")

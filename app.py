@@ -1,6 +1,7 @@
 import threading
-from flask import request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template
 from curation.components.db import User, db  # Importa il modello e l'istanza di SQLAlchemy
+from curation.components.instance import local_data_list
 from curation.sniper import SocialMediaPublisher
 from curation.components.beem import Blockchain
 from curation.utils.data_loader import get_user_data
@@ -9,9 +10,10 @@ from curation.action import _run_check_cycle
 from curation.components.logger_config import logger
 from curation.components.config import TEST
 import time
-from curation.components.factory import create_app
 
-app = create_app()
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///yourdatabase.db'  # Configura il database
+db.init_app(app)  # Inizializza SQLAlchemy con l'app
 
 @app.route('/')
 def home():
@@ -71,6 +73,12 @@ def run_scheduler():
         scheduler.add_job(func=get_user_data, trigger="interval", seconds=600)  # Aggiorna ogni 10 minuti
         scheduler.start()
         return scheduler
+    
+def create_app():
+    with app.app_context():
+        db.create_all()
+        get_user_data()
+    return app
 
 def start_monitoring(app):
     """Avvia il monitoraggio delle deleghe con contesto applicazione"""
@@ -84,6 +92,7 @@ def start_monitoring(app):
             time.sleep(60)
     
 if __name__ == '__main__':
+    app = create_app()
     # monitor_thread = threading.Thread(target=start_monitoring, args=(app,), daemon=True)
     # monitor_thread.start()
     publisher = SocialMediaPublisher()  # Crea un'istanza di SocialMediaPublisher
