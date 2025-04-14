@@ -138,23 +138,30 @@ class SocialMediaPublisher:
 
     def process_posts(self, platform, usernames):
         """Elabora i post per una specifica piattaforma."""
-        new_links = []
         domain = steem_domain if platform == "steem" else hive_domain
 
         try:
+            # Ottieni i post dall'API
             posts = self.beem.get_posts(usernames, platform)
-            new_links = [link for link in posts if link not in self.published_links[platform] and f"{domain}{link}" not in self.published_posts]
             
+            # Registra quanti post sono stati recuperati in totale
+            logger.info(f"Recuperati {len(posts)} post totali per {platform}")
+            
+            # Filtra solo i post realmente nuovi
+            new_links = [link for link in posts if not self.is_post_processed(platform, link)]
+            
+            # Registra quanti post nuovi sono stati trovati
             if new_links:
-                # Aggiorna entrambi i set di tracking dei post
-                self.published_links[platform].update(new_links)
-                # Aggiungi anche i link completi con dominio al set globale
-                for link in new_links:
-                    self.published_posts.add(f"{domain}{link}")
+                logger.info(f"Trovati {len(new_links)} nuovi post per {platform}")
                 
-                # Processa solo i nuovi link
+                # Aggiorna entrambi i sistemi di tracciamento PRIMA di processare
                 for link in new_links:
-                    self.handle_voting(platform, f"{domain}{link}")
+                    full_link = f"{domain}{link}"
+                    self.published_links[platform].add(link)
+                    self.published_posts.add(full_link)
+                    
+                    # Processa solo i nuovi link uno alla volta
+                    self.handle_voting(platform, full_link)
 
             self.last_process_time = datetime.now()
             if self.watchdog:
@@ -162,6 +169,17 @@ class SocialMediaPublisher:
 
         except Exception as e:
             self.log_and_notify(f"Errore nell'elaborazione dei post per {platform}: {str(e)}", critical=True)
+
+    def is_post_processed(self, platform, link):
+        """Verifica se un post è già stato elaborato."""
+        domain = steem_domain if platform == "steem" else hive_domain
+        full_link = f"{domain}{link}" if domain not in link else link
+        
+        # Verifica in entrambi i sistemi di tracciamento
+        if link in self.published_links[platform] or full_link in self.published_posts:
+            logger.info(f"Post già elaborato: {full_link}")
+            return True
+        return False
 
     def handle_voting(self, platform, post_link):
         """Gestisce il processo di voto per un post."""
