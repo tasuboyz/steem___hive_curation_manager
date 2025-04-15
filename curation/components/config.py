@@ -5,7 +5,7 @@ import logging
 
 load_dotenv()
 
-TEST = False
+TEST = True
 
 node_list = {
         "steem": [

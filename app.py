@@ -6,6 +6,7 @@ from curation.components.factory import create_app, init_services, app_state
 from curation.services.user_service import UserService
 import signal
 import sys
+import os
 
 app = create_app()
 
@@ -61,13 +62,23 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
     
-    # Inizializza tutti i servizi
-    init_services(app)
+    # Avvia i servizi solo nel processo principale quando non si è in modalità debug
+    # o quando si è nel processo principale in modalità debug
+    debug_mode = not TEST
+    
+    # In Flask debug mode, the reloader will spawn a child process, we only want to initialize
+    # services in the main process to avoid duplications
+    is_main_process = not debug_mode or os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
+    
+    if is_main_process:
+        logger.info("Inizializzando i servizi nel processo principale...")
+        init_services(app)
+    else:
+        logger.info("Processo secondario, saltando l'inizializzazione dei servizi")
     
     # Avvia l'applicazione
     try:
-        debug_mode = not TEST  # Debug attivo solo quando non in modalità test
-        app.run(debug=debug_mode, port=8088, host='0.0.0.0')
+        app.run(debug=debug_mode, port=8088, host='0.0.0.0', use_reloader=debug_mode)
     except KeyboardInterrupt:
         # Questo blocco è un backup, il gestore di segnale dovrebbe gestire l'interruzione
         app_state.stop_all()
