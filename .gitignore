@@ -1,6 +1,7 @@
 /.venv
 /instance
 /log.txt
+/test
 
 # Cache files
 __pycache__/
