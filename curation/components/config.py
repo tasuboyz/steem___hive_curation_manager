@@ -27,7 +27,7 @@ else:
 
 log_file_path = "log.txt"
 
-steem_domain ="https://steemit.com"
+steem_domain ="https://cur8.fun/#/"
 
 hive_domain ="https://peakd.com"
 

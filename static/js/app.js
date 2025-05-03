@@ -517,7 +517,7 @@ class CurationInterface {
         const formattedDate = postDate.toLocaleString();
         
         // Use the correct domain based on platform
-        const domain = platform === 'steem' ? 'https://steemit.com' : 'https://peakd.com';
+        const domain = platform === 'steem' ? 'https://cur8.fun/#' : 'https://peakd.com';
         
         postContainer.innerHTML = `
           <div class="post-info">
