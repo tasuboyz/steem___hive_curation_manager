@@ -117,7 +117,7 @@ if __name__ == '__main__':
     
     # Avvia l'applicazione
     try:
-        app.run(debug=debug_mode, port=8088, host='0.0.0.0', use_reloader=debug_mode)
+        app.run(debug=debug_mode, port=8089, host='0.0.0.0', use_reloader=debug_mode)
     except KeyboardInterrupt:
         # Questo blocco è un backup, il gestore di segnale dovrebbe gestire l'interruzione
         app_state.stop_all()

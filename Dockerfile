@@ -34,8 +34,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copia il resto dei file dell'applicazione
 COPY . .
 
-# Espone la porta 8081
-EXPOSE 8088
+# Espone la porta 8089
+EXPOSE 8089
 
 # Comando per eseguire l'applicazione
 CMD ["python3", "app.py"]
