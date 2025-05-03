@@ -4,16 +4,55 @@ from curation.components.logger_config import logger
 from curation.components.config import TEST
 from curation.components.factory import create_app, init_services, app_state
 from curation.services.user_service import UserService
+from curation.components.beem import Blockchain
 import signal
 import sys
 import os
 
 app = create_app()
+blockchain_connector = Blockchain()  # Istanza globale per la classe Blockchain
 
 # Definire le route
 @app.route('/')
 def home():
     return render_template('index.html')
+
+# Nuovo endpoint per ottenere i votanti di un post
+@app.route('/api/post_voters', methods=['GET'])
+def get_post_voters():
+    post_url = request.args.get('post_url')
+    min_importance = float(request.args.get('min_importance', 0.0))
+    
+    if not post_url:
+        return jsonify({'error': 'Missing post_url parameter'}), 400
+    
+    try:
+        # Determina la blockchain in base all'URL
+        platform = 'hive' if 'peakd.com' in post_url or 'hive.blog' in post_url else 'steem'
+        
+        # Inizializza l'istanza di blockchain corretta
+        for node_url in blockchain_connector.node_urls.get(platform):
+            if blockchain_connector.ping_server(node_url):
+                if platform == 'steem':
+                    from beem import Steem
+                    blockchain_connector.blockchain = Steem(node=node_url)
+                else:
+                    from beem import Hive
+                    blockchain_connector.blockchain = Hive(node=node_url)
+                break
+        
+        if blockchain_connector.blockchain is None:
+            return jsonify({'error': f'No available {platform} node'}), 503
+        
+        voters_data = blockchain_connector.get_post_voters(post_url, min_importance)
+        return jsonify({
+            'voters': voters_data[:10],  # Limita ai 10 votanti più importanti
+            'total_voters': len(voters_data),
+            'platform': platform
+        })
+    except Exception as e:
+        logger.error(f"Errore nel recupero dei votanti per {post_url}: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/users', methods=['POST'])
 def add_user():

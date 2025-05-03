@@ -54,6 +54,10 @@ class ApiHandler {
   async deleteUser(username) {
     return await this.sendRequest(`/users/${username}`, 'DELETE');
   }
+
+  async getPostVoters(postUrl) {
+    return await this.sendRequest(`/api/post_voters?post_url=${encodeURIComponent(postUrl)}&min_importance=0.1`, 'GET');
+  }
 }
 
 class CurationInterface {
@@ -517,21 +521,87 @@ class CurationInterface {
         const formattedDate = postDate.toLocaleString();
         
         // Use the correct domain based on platform
-        const domain = platform === 'steem' ? 'https://cur8.fun/#' : 'https://peakd.com';
+        const domain = platform === 'steem' ? 'https://steemit.com' : 'https://peakd.com';
+        const postUrl = `${domain}/@${username}/${latestPost.permlink}`;
         
+        // Rendering del post base
         postContainer.innerHTML = `
           <div class="post-info">
             <h4><i class="fas fa-file-alt"></i> ${latestPost.title}</h4>
             <div class="post-meta">
               <span><i class="far fa-clock"></i> ${formattedDate}</span>
-              <a href="${domain}/@${username}/${latestPost.permlink}" 
+              <a href="${postUrl}" 
                  target="_blank" 
                  rel="noopener noreferrer">
                 <i class="fas fa-external-link-alt"></i> View Post
               </a>
+              <button class="show-voters-btn" id="show-voters-${username}">
+                <i class="fas fa-users"></i> Show Voters
+              </button>
+            </div>
+            <div class="voters-container" id="voters-container-${username}" style="display:none">
+              <div class="loading-voters"><i class="fas fa-spinner fa-spin"></i> Loading voters data...</div>
             </div>
           </div>
         `;
+
+        // Aggiungi gestore eventi per mostrare i votanti
+        document.getElementById(`show-voters-${username}`).addEventListener('click', async () => {
+          const votersContainer = document.getElementById(`voters-container-${username}`);
+          
+          // Toggle visibility
+          if (votersContainer.style.display === 'none') {
+            votersContainer.style.display = 'block';
+            
+            try {
+              // Richiedi i dati dei votanti
+              const votersResponse = await this.api.getPostVoters(postUrl);
+              
+              if (votersResponse.success && votersResponse.data.voters) {
+                const voters = votersResponse.data.voters;
+                const totalVoters = votersResponse.data.total_voters;
+                
+                let votersHtml = `<h5><i class="fas fa-chart-bar"></i> Top Voters (${totalVoters} total)</h5>`;
+                
+                if (voters.length > 0) {
+                  votersHtml += '<div class="voters-list">';
+                  voters.forEach(voter => {
+                    // Calcola il peso del voto come percentuale
+                    const voteWeight = (voter.weight / 100).toFixed(0);
+                    // Visualizza il ritardo del voto
+                    const voteDelay = voter.vote_delay_minutes;
+                    // Formatta l'importanza
+                    const importance = voter.importance.toFixed(2);
+                    
+                    votersHtml += `
+                      <div class="voter-item">
+                        <strong>@${voter.voter}</strong> 
+                        <span class="vote-stats">
+                          <span class="vote-timing" title="Vote timing">after ${voteDelay} min</span>
+                          <span class="vote-power" title="Voter influence score">power: ${importance}</span>
+                        </span>
+                      </div>
+                    `;
+                  });
+                  votersHtml += '</div>';
+                } else {
+                  votersHtml += '<div class="no-voters">No significant voters yet</div>';
+                }
+                
+                votersContainer.innerHTML = votersHtml;
+                
+              } else {
+                votersContainer.innerHTML = '<div class="error"><i class="fas fa-exclamation-triangle"></i> Could not load voters data</div>';
+              }
+            } catch (error) {
+              console.error('Error loading voters:', error);
+              votersContainer.innerHTML = `<div class="error"><i class="fas fa-exclamation-circle"></i> Error: ${error.message}</div>`;
+            }
+          } else {
+            votersContainer.style.display = 'none';
+          }
+        });
+        
       } else {
         postContainer.innerHTML = '<div class="no-posts"><i class="fas fa-info-circle"></i> No posts found</div>';
       }
