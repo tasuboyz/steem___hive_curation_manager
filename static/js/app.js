@@ -207,7 +207,7 @@ class CurationInterface {
   async handleAddUser(e) {
     e.preventDefault();
     const username = document.getElementById('username').value;
-    const voteDelay = parseInt(document.getElementById('voteDelay').value);
+    const voteDelay = parseFloat(document.getElementById('voteDelay').value);
     const voteWeight = parseInt(document.getElementById('voteWeight').value);
 
     try {
@@ -280,6 +280,7 @@ class CurationInterface {
               id="editVoteDelay" 
               min="0" 
               max="1440"
+              step="0.1"
               value="${userData.voteDelay}" 
               required
               oninput="this.form.querySelector('.delay-feedback').classList.add('show')"
@@ -356,7 +357,7 @@ class CurationInterface {
     const editForm = modal.querySelector('#editUserForm');
     editForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const newVoteDelay = parseInt(delayInput.value);
+      const newVoteDelay = parseFloat(delayInput.value);
       const newVoteWeight = parseInt(weightInput.value);
 
       if (newVoteDelay < 0 || newVoteDelay > 1440 || newVoteWeight < 1 || newVoteWeight > 100) {
