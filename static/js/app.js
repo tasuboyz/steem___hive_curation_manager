@@ -523,6 +523,7 @@ class CurationInterface {
         // Use the correct domain based on platform
         const domain = platform === 'steem' ? 'https://steemit.com' : 'https://peakd.com';
         const postUrl = `${domain}/@${username}/${latestPost.permlink}`;
+        const viewUrl = `https://cur8.fun/#/@${username}/${latestPost.permlink}`;
         
         // Rendering del post base
         postContainer.innerHTML = `
@@ -530,7 +531,7 @@ class CurationInterface {
             <h4><i class="fas fa-file-alt"></i> ${latestPost.title}</h4>
             <div class="post-meta">
               <span><i class="far fa-clock"></i> ${formattedDate}</span>
-              <a href="${postUrl}" 
+              <a href="${viewUrl}" 
                  target="_blank" 
                  rel="noopener noreferrer">
                 <i class="fas fa-external-link-alt"></i> View Post
@@ -560,8 +561,22 @@ class CurationInterface {
               if (votersResponse.success && votersResponse.data.voters) {
                 const voters = votersResponse.data.voters;
                 const totalVoters = votersResponse.data.total_voters;
+                const optimalVoteTime = votersResponse.data.optimal_vote_time;
                 
-                let votersHtml = `<h5><i class="fas fa-chart-bar"></i> Top Voters (${totalVoters} total)</h5>`;
+                // Mostra informazioni sul tempo ottimale di voto
+                let votersHtml = `
+                  <div class="optimal-vote-time">
+                    <h5><i class="fas fa-stopwatch"></i> Tempo ottimale di voto</h5>
+                    <div class="vote-timing-recommendation">
+                      <span class="optimal-time">${optimalVoteTime.optimal_time} minuti</span>
+                      <div class="vote-window">
+                        (finestra ottimale: ${optimalVoteTime.vote_window[0]}-${optimalVoteTime.vote_window[1]} min)
+                      </div>
+                      <div class="vote-explanation">${optimalVoteTime.explanation}</div>
+                    </div>
+                  </div>
+                  <h5><i class="fas fa-chart-bar"></i> Top Voters (${totalVoters} total)</h5>
+                `;
                 
                 if (voters.length > 0) {
                   votersHtml += '<div class="voters-list">';
@@ -573,10 +588,16 @@ class CurationInterface {
                     // Formatta l'importanza
                     const importance = voter.importance.toFixed(2);
                     
+                    // Evidenzia i votanti principali menzionati nella strategia di voto
+                    const isKeyVoter = optimalVoteTime.top_voters && 
+                                      optimalVoteTime.top_voters.includes(voter.voter);
+                    const keyVoterClass = isKeyVoter ? 'key-voter' : '';
+                    
                     votersHtml += `
-                      <div class="voter-item">
+                      <div class="voter-item ${keyVoterClass}">
                         <strong>@${voter.voter}</strong> 
                         <span class="vote-stats">
+                          <span class="vote-weight">${voteWeight}%</span>
                           <span class="vote-timing" title="Vote timing">after ${voteDelay} min</span>
                           <span class="vote-power" title="Voter influence score">power: ${importance}</span>
                         </span>

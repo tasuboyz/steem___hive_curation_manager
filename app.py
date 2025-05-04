@@ -45,10 +45,15 @@ def get_post_voters():
             return jsonify({'error': f'No available {platform} node'}), 503
         
         voters_data = blockchain_connector.get_post_voters(post_url, min_importance)
+        
+        # Calcola il tempo ottimale di voto in base ai votanti importanti
+        optimal_vote_info = blockchain_connector.calculate_optimal_vote_time(voters_data)
+        
         return jsonify({
             'voters': voters_data[:10],  # Limita ai 10 votanti più importanti
             'total_voters': len(voters_data),
-            'platform': platform
+            'platform': platform,
+            'optimal_vote_time': optimal_vote_info
         })
     except Exception as e:
         logger.error(f"Errore nel recupero dei votanti per {post_url}: {e}")

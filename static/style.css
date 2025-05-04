@@ -746,3 +746,51 @@ input:focus {
   padding: 0.5rem;
   color: var(--text-secondary);
 }
+
+/* Optimal Vote Time styles */
+.optimal-vote-time {
+  background-color: var(--primary-color);
+  color: white;
+  padding: 0.75rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.optimal-vote-time h5 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+  color: white;
+}
+
+.vote-timing-recommendation {
+  display: flex;
+  flex-direction: column;
+}
+
+.optimal-time {
+  font-size: 1.2rem;
+  font-weight: bold;
+  margin-bottom: 0.25rem;
+}
+
+.vote-window {
+  font-size: 0.85rem;
+  opacity: 0.9;
+  margin-bottom: 0.5rem;
+}
+
+.vote-explanation {
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+/* Key voter highlight */
+.key-voter {
+  background-color: rgba(255, 236, 179, 0.2);
+  border-left: 3px solid var(--warning-color);
+}
+
+.key-voter strong {
+  color: var(--primary-color);
+}
