@@ -40,6 +40,24 @@ class CurationApp {
     document.getElementById('importInput').addEventListener('change', (e) => this.importData(e));
     document.getElementById('logDataBtn').addEventListener('click', () => this.logData());
     
+    // Nuovo event listener per il toggle dell'optimal time
+    document.getElementById('optimalTimeToggle').addEventListener('change', (e) => {
+      const useOptimalTime = e.target.checked;
+      const voteDelayInput = document.getElementById('voteDelay');
+      
+      if (useOptimalTime) {
+        voteDelayInput.classList.add('auto-mode');
+        voteDelayInput.setAttribute('readonly', true);
+        voteDelayInput.setAttribute('placeholder', 'Auto');
+        voteDelayInput.value = '';
+      } else {
+        voteDelayInput.classList.remove('auto-mode');
+        voteDelayInput.removeAttribute('readonly');
+        voteDelayInput.setAttribute('placeholder', '');
+        voteDelayInput.value = '5'; // Default value
+      }
+    });
+    
     // Aggiungi event delegation per i pulsanti delle user card
     document.getElementById('usersList').addEventListener('click', (e) => {
       // Gestisci il pulsante di modifica
@@ -85,7 +103,10 @@ class CurationApp {
   async handleAddUser(e) {
     e.preventDefault();
     const username = document.getElementById('username').value;
-    const voteDelay = parseFloat(document.getElementById('voteDelay').value);
+    const useOptimalTime = document.getElementById('optimalTimeToggle').checked;
+    
+    // Se useOptimalTime è true, il valore di voteDelay è "auto", altrimenti usa il valore inserito
+    const voteDelay = useOptimalTime ? 'auto' : parseFloat(document.getElementById('voteDelay').value);
     const voteWeight = parseInt(document.getElementById('voteWeight').value);
 
     try {
@@ -101,6 +122,7 @@ class CurationApp {
         platform: this.currentPlatform,
         voteDelay,
         voteWeight,
+        useOptimalTime,
         timestamp: Date.now()
       };
 
@@ -137,23 +159,38 @@ class CurationApp {
     const userData = this.users.get(username);
     if (!userData) return;
 
+    // Determina se l'utente ha attivato la modalità auto (voteDelay = 'auto' oppure useOptimalTime = true)
+    const useOptimalTime = userData.useOptimalTime || userData.voteDelay === 'auto';
+    
     const modalContent = `
       <form id="editUserForm">
         <div class="setting">
           <label for="editVoteDelay">
             <i class="fas fa-clock"></i> Vote Delay (minutes)
           </label>
-          <input 
-            type="number" 
-            id="editVoteDelay" 
-            min="0" 
-            max="1440"
-            step="0.1"
-            value="${userData.voteDelay}" 
-            required
-          >
+          <div class="delay-input-container">
+            <input 
+              type="number" 
+              id="editVoteDelay" 
+              min="0" 
+              max="1440"
+              step="0.1"
+              value="${useOptimalTime ? '' : userData.voteDelay}" 
+              placeholder="${useOptimalTime ? 'Auto' : ''}"
+              ${useOptimalTime ? 'readonly' : ''}
+              class="${useOptimalTime ? 'auto-mode' : ''}"
+              ${useOptimalTime ? '' : 'required'}
+            >
+            <div class="toggle-container">
+              <label class="toggle-switch">
+                <input type="checkbox" id="editOptimalTimeToggle" ${useOptimalTime ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="toggle-label">Auto Optimal</span>
+            </div>
+          </div>
           <div class="input-feedback delay-feedback">
-            Posts will be voted ${userData.voteDelay} minutes after publication
+            Posts will be voted ${useOptimalTime ? 'at optimal time (auto)' : userData.voteDelay + ' minutes after publication'}
           </div>
         </div>
         
@@ -195,6 +232,32 @@ class CurationApp {
     const weightInput = modal.querySelector('#editVoteWeight');
     const delayFeedback = modal.querySelector('.delay-feedback');
     const weightFeedback = modal.querySelector('.weight-feedback');
+    const optimalToggle = modal.querySelector('#editOptimalTimeToggle');
+    
+    // Gestisci il toggle per Auto Optimal Time
+    optimalToggle.addEventListener('change', (e) => {
+      const useOptimalTime = e.target.checked;
+      
+      if (useOptimalTime) {
+        delayInput.classList.add('auto-mode');
+        delayInput.setAttribute('readonly', true);
+        delayInput.setAttribute('placeholder', 'Auto');
+        delayInput.value = '';
+        delayInput.removeAttribute('required');
+        delayFeedback.textContent = 'Posts will be voted at optimal time (auto)';
+        delayFeedback.classList.remove('invalid');
+        delayFeedback.classList.add('valid', 'show');
+      } else {
+        delayInput.classList.remove('auto-mode');
+        delayInput.removeAttribute('readonly');
+        delayInput.setAttribute('placeholder', '');
+        delayInput.value = '5'; // Default value or previous value
+        delayInput.setAttribute('required', true);
+        delayFeedback.textContent = `Posts will be voted 5 minutes after publication`;
+        delayFeedback.classList.remove('invalid');
+        delayFeedback.classList.add('valid', 'show');
+      }
+    });
 
     delayInput.addEventListener('input', (e) => {
       const value = e.target.value;
@@ -231,10 +294,15 @@ class CurationApp {
     modal.querySelector('#editUserForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       
-      const newVoteDelay = parseFloat(delayInput.value);
+      const useOptimalTime = modal.querySelector('#editOptimalTimeToggle').checked;
+      const newVoteDelay = useOptimalTime ? 'auto' : parseFloat(delayInput.value);
       const newVoteWeight = parseInt(weightInput.value);
 
-      if (newVoteDelay < 0 || newVoteDelay > 1440 || newVoteWeight < 1 || newVoteWeight > 100) {
+      if (!useOptimalTime && (newVoteDelay < 0 || newVoteDelay > 1440 || isNaN(newVoteDelay))) {
+        return;
+      }
+      
+      if (newVoteWeight < 1 || newVoteWeight > 100 || isNaN(newVoteWeight)) {
         return;
       }
 
@@ -242,6 +310,7 @@ class CurationApp {
         ...this.users.get(username),
         voteDelay: newVoteDelay,
         voteWeight: newVoteWeight,
+        useOptimalTime: useOptimalTime,
         lastUpdated: Date.now()
       };
 
@@ -437,17 +506,37 @@ class CurationApp {
           const postDate = new Date(latestPost.created + 'Z');
           const now = new Date();
           const minutesSincePost = (now - postDate) / 1000 / 60;
-
-          if (minutesSincePost >= data.voteDelay && minutesSincePost < data.voteDelay + 1) {
-            // Here you would implement the actual voting logic
-            console.log(`Voting on post by ${username} with weight ${data.voteWeight}%`);
-            // Example post data available:
-            console.log({
-              author: latestPost.author,
-              permlink: latestPost.permlink,
-              title: latestPost.title,
-              created: latestPost.created
-            });
+          
+          // Controlla se l'utente usa la modalità automatica
+          const isAutoMode = data.useOptimalTime || data.voteDelay === 'auto';
+          
+          if (isAutoMode) {
+            // Se è in modalità auto, ottieni i dati dei votanti e calcola il tempo ottimale
+            try {
+              const postUrl = `@${username}/${latestPost.permlink}`;
+              const votersResponse = await apiService.getPostVoters(postUrl);
+              
+              if (votersResponse.success && votersResponse.data.optimal_vote_time) {
+                const optimalTime = votersResponse.data.optimal_vote_time.optimal_time;
+                const voteWindow = votersResponse.data.optimal_vote_time.vote_window;
+                
+                // Vota se siamo nella finestra ottimale (tra min e max)
+                if (minutesSincePost >= voteWindow[0] && minutesSincePost <= voteWindow[1]) {
+                  console.log(`Voting on post by ${username} with weight ${data.voteWeight}% (Optimal Time: ${optimalTime})`);
+                  // Logica di voto effettiva
+                  // ...
+                }
+              }
+            } catch (error) {
+              console.error(`Error getting optimal vote time for ${username}: ${error}`);
+            }
+          } else {
+            // Modalità manuale originale
+            if (minutesSincePost >= data.voteDelay && minutesSincePost < data.voteDelay + 1) {
+              console.log(`Voting on post by ${username} with weight ${data.voteWeight}%`);
+              // Logica di voto effettiva
+              // ...
+            }
           }
         }
       } catch (error) {

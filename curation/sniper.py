@@ -74,7 +74,10 @@ class SocialMediaPublisher:
             return
         
         try:
-            vote_delay = user_data['voteDelay']
+            # Controlla se l'utente ha attivato la modalità automatica
+            use_optimal_time = user_data.get('useOptimalTime', False) or user_data.get('voteDelay') == 'auto'
+            
+            # Recupera il peso del voto dall'utente
             vote_weight = user_data['voteWeight']
             curator = steem_curator if platform == "steem" else hive_curator
             curator_key = steem_curator_posting_key if platform == "steem" else hive_curator_posting_key
@@ -84,11 +87,28 @@ class SocialMediaPublisher:
             old_voting_power = curator_info['result'][0]['voting_power'] / 100
             voting_power = self.beem.calculate_voting_power(last_vote_time, old_voting_power)
             
-            telegram_message = f"[{platform.upper()}] (VP: {voting_power} MIN: {vote_delay})\n{post_link}"
-            self.send_telegram_message(TOKEN, admin_id, telegram_message)
-            
             author = self.beem.get_steem_author(post_link) if platform == "steem" else self.beem.get_hive_author(post_link)
             permlink = self.beem.get_steem_permlink(post_link) if platform == "steem" else self.beem.get_hive_permlink(post_link)
+            
+            # Controlla se stiamo utilizzando il tempo ottimale
+            if use_optimal_time:
+                # Ottieni i votanti del post e calcola il tempo ottimale di voto
+                voters_data = self.beem.get_post_voters(f"@{author}/{permlink}", min_importance=0.1)
+                optimal_vote_info = self.beem.calculate_optimal_vote_time(voters_data)
+                
+                # Usa il tempo di voto ottimale
+                vote_delay = optimal_vote_info['optimal_time']
+                vote_window = optimal_vote_info['vote_window']
+                vote_explanation = optimal_vote_info['explanation']
+                
+                telegram_message = f"[{platform.upper()}] (VP: {voting_power:.2f}, OPTIMAL: {vote_delay} min)\n{vote_explanation}\n{post_link}"
+            else:
+                # Usa il tempo di ritardo specificato dall'utente
+                vote_delay = user_data['voteDelay']
+                telegram_message = f"[{platform.upper()}] (VP: {voting_power:.2f}, DELAY: {vote_delay} min)\n{post_link}"
+            
+            # Invia messaggio con informazioni sul voto pianificato
+            self.send_telegram_message(TOKEN, admin_id, telegram_message)
             
             if voting_power > 89:
                 post = self.beem.get_comment(author=author, permalink=permlink, blockchain=platform)
@@ -114,7 +134,7 @@ class SocialMediaPublisher:
                         self.beem.like_hive_post(voter=hive_curator, voted=author, permlink=permlink, private_posting_key=hive_curator_posting_key, weight=vote_weight)
                 self.send_telegram_message(TOKEN, admin_id, "Voted!")
             else:
-                self.send_telegram_message(TOKEN, admin_id, "Not Voted!")
+                self.send_telegram_message(TOKEN, admin_id, "Not Voted! Voting power too low.")
         except Exception as e:
             logger.error(f"Errore durante la gestione del voto per {post_link}: {str(e)}")
             self.send_telegram_message(TOKEN, admin_id, f"Error during vote: {str(e)}")
