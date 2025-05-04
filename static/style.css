@@ -749,40 +749,105 @@ input:focus {
 
 /* Optimal Vote Time styles */
 .optimal-vote-time {
-  background-color: var(--primary-color);
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
   color: white;
-  padding: 0.75rem;
-  border-radius: 6px;
-  margin-bottom: 1rem;
+  padding: 1rem;
+  border-radius: 10px;
+  margin-bottom: 1.2rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease-in-out;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.optimal-vote-time:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+.optimal-vote-time::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 120px;
+  height: 120px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0) 70%);
+  border-radius: 50%;
+  transform: translate(30%, -30%);
 }
 
 .optimal-vote-time h5 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin-top: 0;
-  margin-bottom: 0.5rem;
-  font-size: 0.95rem;
+  margin-bottom: 0.75rem;
+  font-size: 1rem;
   color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  padding-bottom: 0.5rem;
+}
+
+.optimal-vote-time h5::before {
+  content: "\f017"; /* Clock icon */
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  font-size: 0.95rem;
 }
 
 .vote-timing-recommendation {
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 1;
 }
 
 .optimal-time {
-  font-size: 1.2rem;
+  font-size: 1.3rem;
   font-weight: bold;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  animation: pulseHighlight 2s infinite alternate;
+}
+
+@keyframes pulseHighlight {
+  from { opacity: 0.9; }
+  to { opacity: 1; text-shadow: 0 0 8px rgba(255, 255, 255, 0.5); }
 }
 
 .vote-window {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   opacity: 0.9;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.6rem;
+  background: rgba(0, 0, 0, 0.15);
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  display: inline-block;
+  max-width: max-content;
 }
 
 .vote-explanation {
   font-size: 0.9rem;
-  line-height: 1.4;
+  line-height: 1.5;
+  opacity: 0.9;
+  padding-top: 0.4rem;
+  position: relative;
+}
+
+/* Tema scuro - alcune personalizzazioni specifiche */
+[data-theme="dark"] .optimal-vote-time {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  background: linear-gradient(135deg, var(--primary-color) 0%, #1f4f9e 100%);
+}
+
+[data-theme="dark"] .vote-window {
+  background: rgba(0, 0, 0, 0.25);
 }
 
 /* Key voter highlight */
