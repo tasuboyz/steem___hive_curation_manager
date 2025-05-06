@@ -92,16 +92,33 @@ class SocialMediaPublisher:
             
             # Controlla se stiamo utilizzando il tempo ottimale
             if use_optimal_time:
-                # Ottieni i votanti del post e calcola il tempo ottimale di voto
-                voters_data = self.beem.get_post_voters(f"@{author}/{permlink}", min_importance=0.1)
-                optimal_vote_info = self.beem.calculate_optimal_vote_time(voters_data)
+                # Ottieni i post precedenti dell'autore
+                previous_posts = self.beem.get_previous_author_posts(author, platform, limit=5)
                 
-                # Usa il tempo di voto ottimale
-                vote_delay = optimal_vote_info['optimal_time']
-                vote_window = optimal_vote_info['vote_window']
-                vote_explanation = optimal_vote_info['explanation']
-                
-                telegram_message = f"[{platform.upper()}] (VP: {voting_power:.2f}, OPTIMAL: {vote_delay} min)\n{vote_explanation}\n{post_link}"
+                if previous_posts and len(previous_posts) > 0:
+                    # Raccoglie i dati dei votanti dai post precedenti
+                    all_voters_data = []
+                    for post in previous_posts:
+                        # Ottieni i votanti del post precedente
+                        post_permlink = post.get('permlink', '')
+                        if post_permlink:
+                            post_voters = self.beem.get_post_voters(f"@{author}/{post_permlink}", min_importance=0.1)
+                            all_voters_data.extend(post_voters)
+                    
+                    # Calcola il tempo ottimale basato sui post precedenti
+                    optimal_vote_info = self.beem.calculate_optimal_vote_time(all_voters_data)
+                    
+                    # Usa il tempo di voto ottimale
+                    vote_delay = optimal_vote_info['optimal_time']
+                    vote_window = optimal_vote_info['vote_window']
+                    vote_explanation = optimal_vote_info['explanation'] + " (basato su post precedenti)"
+                    
+                    telegram_message = f"[{platform.upper()}] (VP: {voting_power:.2f}, OPTIMAL: {vote_delay} min)\n{vote_explanation}\n{post_link}"
+                else:
+                    # Se non ci sono post precedenti, usa un valore di default
+                    vote_delay = 5
+                    vote_window = (4.5, 5.5)
+                    telegram_message = f"[{platform.upper()}] (VP: {voting_power:.2f}, DEFAULT: {vote_delay} min)\nNessun post precedente trovato\n{post_link}"
             else:
                 # Usa il tempo di ritardo specificato dall'utente
                 vote_delay = user_data['voteDelay']

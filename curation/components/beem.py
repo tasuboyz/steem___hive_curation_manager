@@ -913,3 +913,54 @@ class Blockchain:
             'top_voters': [v.get('voter', 'sconosciuto') for v in top_voters],
             'vote_window': (round(vote_window[0], 1), round(vote_window[1], 1))
         }
+
+    def get_previous_author_posts(self, author, platform, limit=5):
+        """
+        Recupera i post precedenti di un autore per analizzare i pattern di voto.
+        
+        Args:
+            author (str): Nome dell'autore
+            platform (str): 'steem' o 'hive'
+            limit (int): Numero massimo di post da recuperare
+            
+        Returns:
+            list: Lista di post precedenti dell'autore
+        """
+        try:
+            logger.info(f"Recupero dei {limit} post precedenti di @{author} su {platform}")
+            
+            # Trova il nodo disponibile
+            node_urls = self.node_urls.get(platform.lower(), [])
+            node_url = None
+            
+            for url in node_urls:
+                if self.ping_server(url):
+                    node_url = url
+                    break
+            
+            if not node_url:
+                logger.error(f"Nessun nodo {platform} disponibile")
+                return []
+            
+            # Prepara la richiesta API
+            headers = {'Content-Type': 'application/json'}
+            data = {
+                "jsonrpc": "2.0",
+                "method": "condenser_api.get_discussions_by_blog",
+                "params": [{"tag": author, "limit": limit+1}],  # +1 per escludere il post attuale
+                "id": 1
+            }
+            
+            response = requests.post(node_url, headers=headers, data=json.dumps(data), timeout=10)
+            response.raise_for_status()
+            
+            posts = response.json().get('result', [])
+            # Filtra solo i post dell'autore (esclude reblog) e salta il primo (post attuale)
+            author_posts = [post for post in posts if post.get('author') == author][1:limit+1]
+            
+            logger.info(f"Recuperati {len(author_posts)} post precedenti di @{author}")
+            return author_posts
+            
+        except Exception as e:
+            logger.error(f"Errore nel recupero dei post precedenti di @{author}: {str(e)}")
+            return []
