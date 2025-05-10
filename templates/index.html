@@ -2,9 +2,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Steem & Hive Curation Interface</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <title>Steem & Hive Curation Interface</title>  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-counter.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-counter-dark.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-input-enhancements.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-input-decorations.css') }}">
 </head>
 <body>
   <div class="container">
@@ -64,12 +67,19 @@
                   <span class="toggle-label">Auto Optimal</span>
                 </div>
               </div>
-            </div>
-            <div class="setting">
+            </div>            <div class="setting">
               <label for="voteWeight">
                 <i class="fas fa-percentage"></i> Vote Weight:
               </label>
               <input type="number" id="voteWeight" min="1" max="100" value="100">
+            </div>            <div class="setting votes-per-day-setting">
+              <label for="votesPerDay">
+                <i class="fas fa-calendar-day"></i> Votes Per Day:
+              </label>
+              <input type="number" id="votesPerDay" min="1" max="10" value="1" placeholder="1-10" aria-label="Votes Per Day" title="Set how many times per day to vote for this author (1-10)">
+              <div class="votes-per-day-feedback">
+                Maximum number of votes per day for this author
+              </div>
             </div>
           </div>
           <button type="submit" class="primary-button">
@@ -93,8 +103,8 @@
   <!-- Script delle librerie blockchain -->
   <script src="https://cdn.jsdelivr.net/npm/steem@0.7.11/dist/steem.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@hiveio/dhive@1.2.7/dist/dhive.min.js"></script>
-  
-  <!-- Script principale dell'applicazione (con type="module" per supportare import/export) -->
+    <!-- Script principale dell'applicazione (con type="module" per supportare import/export) -->
   <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/vote-tooltip.js') }}"></script>
 </body>
 </html>
