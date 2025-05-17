@@ -1,7 +1,7 @@
 FROM python:3.10.12
 
 # Aggiorna i pacchetti e installa tzdata e libgl1-mesa-glx
-RUN apt-get update && apt-get install -y tzdata libgl1-mesa-glx zbar-tools
+RUN apt-get update && apt-get install -y tzdata libgl1-mesa-glx
 
 # Configura il fuso orario
 ENV TZ=Europe/Rome
