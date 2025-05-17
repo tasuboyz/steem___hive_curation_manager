@@ -23,3 +23,13 @@ class Delegator(db.Model):
 
     def __repr__(self):
         return f'<Delegator  {self.username}>'
+
+class Settings(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(50), unique=True, nullable=False)
+    value = db.Column(db.String(255), nullable=False)
+    platform = db.Column(db.String(20), nullable=True)  # steem, hive o null per impostazioni globali
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<Settings {self.key}={self.value} ({self.platform or "global"})>'

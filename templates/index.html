@@ -4,6 +4,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Steem & Hive Curation Interface</title>  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/header.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-counter.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-counter-dark.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-input-enhancements.css') }}">
@@ -11,8 +12,7 @@
 </head>
 <body>
   <div class="container">
-    <header>
-      <div class="header-content">
+    <header>      <div class="header-content">
         <h1><i class="fas fa-robot"></i> Curation Manager</h1>
         <div class="platform-toggle">
           <button id="steemBtn" class="active">
@@ -25,6 +25,9 @@
             <i class="fas fa-sun"></i>
             <i class="fas fa-moon"></i>
           </button>
+          <a href="/settings" class="settings-btn" title="Settings">
+            <i class="fas fa-cog"></i>
+          </a>
         </div>
         <div class="data-controls">
           <button id="exportDataBtn" class="data-btn" title="Export Data">

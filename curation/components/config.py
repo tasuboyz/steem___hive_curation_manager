@@ -5,6 +5,8 @@ import logging
 
 load_dotenv()
 
+# Queste variabili saranno in seguito sovrascrite dai valori nel database
+# ma dobbiamo avere dei valori di default all'avvio
 TEST = True
 
 node_list = {
@@ -20,32 +22,46 @@ node_list = {
         ]
     }
 
-if TEST:
-    log_level = logging.INFO
-else:
-    log_level = logging.ERROR
-
+# Il livello di log dipenderà dal valore di TEST che verrà caricato in seguito
+log_level = logging.INFO
 log_file_path = "log.txt"
 
 steem_domain ="https://steemit.com"
-
 hive_domain ="https://peakd.com"
 
 admin_id = "1026795763"
-
 TOKEN = "8097569551:AAHYAXhuJ6J3sfPoIqBO681eFi-XgbuZA-0"
 
+# Valori predefiniti che verranno sostituiti dalle impostazioni nel database
 steem_curator = "tasuboyz"
-
-steem_curator_posting_key = "5Jk2VmLhW9X6w6bwMsqnyLcGMQ6wJ42pAv2o7M3mJjNhnVG1Hz4"
-
+steem_curator_posting_key = ""  # Per sicurezza, non definiamo più chiavi hardcoded
 hive_curator = "menny.trx"
-
-hive_curator_posting_key = "5Jdhv6acxyCDx6e3QoFoyAAks6udkdv6jksp1ranAaoo7jib8cr"
-
-steem_active_key = "5K4J3WTzcNYv2RJymeJeDCk57eAMbez3DcLb5eBDGEkwd9Advae"
+hive_curator_posting_key = ""  # Per sicurezza, non definiamo più chiavi hardcoded
+steem_active_key = ""  # Per sicurezza, non definiamo più chiavi hardcoded
 
 class Config:
     SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URI', 'sqlite:///yourdatabase.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SOCIAL_PUBLISHER_INTERVAL = 300  # 5 minuti
+
+# Funzione per aggiornare le impostazioni dal database
+def update_config_from_db(settings_service):
+    """Aggiorna le variabili di configurazione utilizzando i valori dal database"""
+    global TEST, log_level, steem_curator, steem_curator_posting_key
+    global hive_curator, hive_curator_posting_key, steem_active_key
+    
+    # Recupera la modalità test
+    test_mode = settings_service.get_setting('test_mode', default='true')
+    TEST = test_mode.lower() == 'true'
+    
+    # Aggiorna il livello di log in base alla modalità test
+    log_level = logging.INFO if TEST else logging.ERROR
+    
+    # Recupera le informazioni del curatore per Steem
+    steem_curator = settings_service.get_setting('steem_curator', default=steem_curator)
+    steem_curator_posting_key = settings_service.get_setting('steem_curator_posting_key', default='')
+    steem_active_key = settings_service.get_setting('steem_active_key', default='')
+    
+    # Recupera le informazioni del curatore per Hive
+    hive_curator = settings_service.get_setting('hive_curator', default=hive_curator)
+    hive_curator_posting_key = settings_service.get_setting('hive_curator_posting_key', default='')

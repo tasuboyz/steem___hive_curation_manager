@@ -1,9 +1,10 @@
-from flask import request, jsonify, render_template
+from flask import request, jsonify, render_template, redirect, url_for, flash
 from curation.components.db import User, db
 from curation.components.logger_config import logger
 from curation.components.config import TEST
 from curation.components.factory import create_app, init_services, app_state
 from curation.services.user_service import UserService
+from curation.services.settings_service import SettingsService
 from curation.components.beem import Blockchain
 import signal
 import sys
@@ -16,6 +17,10 @@ blockchain_connector = Blockchain()  # Istanza globale per la classe Blockchain
 @app.route('/')
 def home():
     return render_template('index.html')
+
+@app.route('/settings')
+def settings():
+    return render_template('settings.html')
 
 # Nuovo endpoint per ottenere i votanti di un post
 @app.route('/api/post_voters', methods=['GET'])
@@ -94,6 +99,105 @@ def get_all_users():
     users = UserService.get_users_by_platform()
     user_list = [{'username': user.username, 'data': user.data} for user in users]
     return jsonify(user_list)
+
+# Routes per la gestione delle impostazioni
+@app.route('/api/settings', methods=['GET'])
+def get_all_settings():
+    """Ottiene tutte le impostazioni dell'applicazione"""
+    platform = request.args.get('platform')
+    settings = SettingsService.get_all_settings(platform)
+    return jsonify(settings)
+
+@app.route('/api/settings/<key>', methods=['GET'])
+def get_setting(key):
+    """Ottiene un'impostazione specifica"""
+    platform = request.args.get('platform')
+    value = SettingsService.get_setting(key, platform)
+    if value is None:
+        return jsonify({'error': f'Setting {key} not found'}), 404
+    return jsonify({key: value})
+
+@app.route('/api/settings/<key>', methods=['POST'])
+def update_setting(key):
+    """Aggiorna un'impostazione specifica"""
+    data = request.json
+    if not data or 'value' not in data:
+        return jsonify({'error': 'Missing value parameter'}), 400
+    
+    platform = data.get('platform')
+    success = SettingsService.set_setting(key, data['value'], platform)
+    
+    if success:
+        return jsonify({'message': f'Setting {key} updated successfully'})
+    return jsonify({'error': 'Error updating setting'}), 500
+
+@app.route('/api/curator/info', methods=['GET'])
+def get_curator_info():
+    """Ottiene le informazioni sul curatore per una piattaforma specifica"""
+    platform = request.args.get('platform', 'steem')
+    if platform not in ['steem', 'hive']:
+        return jsonify({'error': 'Invalid platform. Must be steem or hive'}), 400
+    
+    curator_info = SettingsService.get_curator_info(platform)
+    
+    # Non inviamo le chiavi al frontend per motivi di sicurezza
+    if 'posting_key' in curator_info:
+        curator_info['posting_key_set'] = bool(curator_info['posting_key'])
+        del curator_info['posting_key']
+    
+    if 'active_key' in curator_info:
+        curator_info['active_key_set'] = bool(curator_info['active_key'])
+        del curator_info['active_key']
+    
+    return jsonify(curator_info)
+
+@app.route('/api/curator/update', methods=['POST'])
+def update_curator_info():
+    """Aggiorna le informazioni del curatore"""
+    data = request.json
+    if not data or 'platform' not in data or 'username' not in data:
+        return jsonify({'error': 'Missing required parameters'}), 400
+    
+    platform = data['platform']
+    if platform not in ['steem', 'hive']:
+        return jsonify({'error': 'Invalid platform. Must be steem or hive'}), 400
+    
+    # Aggiorna l'username del curatore
+    success = SettingsService.set_setting(f'{platform}_curator', data['username'], platform)
+    
+    # Aggiorna la chiave posting del curatore se fornita
+    if 'posting_key' in data and data['posting_key']:
+        success = success and SettingsService.set_setting(
+            f'{platform}_curator_posting_key', data['posting_key'], platform)
+    
+    # Aggiorna la chiave active solo per steem se fornita
+    if platform == 'steem' and 'active_key' in data and data['active_key']:
+        success = success and SettingsService.set_setting(
+            'steem_active_key', data['active_key'], platform)
+    
+    if success:
+        return jsonify({'message': f'{platform.capitalize()} curator info updated successfully'})
+    return jsonify({'error': 'Error updating curator info'}), 500
+
+@app.route('/api/test_mode', methods=['GET'])
+def get_test_mode():
+    """Ottiene lo stato della modalità test"""
+    test_mode = SettingsService.is_test_mode()
+    return jsonify({'test_mode': test_mode})
+
+@app.route('/api/test_mode', methods=['POST'])
+def update_test_mode():
+    """Aggiorna lo stato della modalità test"""
+    data = request.json
+    if not data or 'enabled' not in data:
+        return jsonify({'error': 'Missing enabled parameter'}), 400
+    
+    value = 'true' if data['enabled'] else 'false'
+    success = SettingsService.set_setting('test_mode', value)
+    
+    if success:
+        return jsonify({'message': 'Test mode updated successfully'})
+    return jsonify({'error': 'Error updating test mode'}), 500
 
 def handle_shutdown(signal, frame):
     """Gestisce l'arresto pulito dell'applicazione"""

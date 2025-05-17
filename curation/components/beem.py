@@ -8,13 +8,17 @@ import os
 import time
 import pickle
 import aiohttp
-from .config import node_list, steem_curator, steem_active_key
+from .config import node_list
 from .logger_config import logger
 from datetime import datetime, timezone
 from .instance import published_posts, last_check_time
 from beem.transactionbuilder import TransactionBuilder
 from beembase.operations import Transfer
 from .db import db, Delegator
+try:
+    from ..services.settings_service import SettingsService
+except ImportError:
+    SettingsService = None
 
 class Blockchain:
     def __init__(self, mode='irreversible'):
@@ -90,7 +94,6 @@ class Blockchain:
     def get_posts(self, usernames, platform, max_age_minutes=5):
         post_links = []
         current_time = datetime.now(timezone.utc)
-        logger.info(f"Recuperando post per {len(usernames)} utenti su {platform}")
 
         for node_url in self.node_urls[platform.lower()]:
             if not self.ping_server(node_url):
@@ -100,7 +103,6 @@ class Blockchain:
         headers = {'Content-Type': 'application/json'}
 
         for username in usernames:
-            logger.info(f"Recuperando post per {username} su {platform}")
             data = {
                 "jsonrpc": "2.0",
                 "method": "condenser_api.get_discussions_by_blog",
@@ -119,26 +121,17 @@ class Blockchain:
                         post_age = current_time - post_time
                         age_minutes = post_age.total_seconds() / 60
                         last_check_time = self.last_check_time[username]
-                        # logger.info(f"Post trovato: {link} - {post_time} - età: {post_age}")
-                        # logger.info(f"Ultimo controllo per {username}: {self.last_check_time[username]}")
-                        # logger.info(f"Età del post: {post_age.total_seconds() / 60} minuti")
-                        # logger.info(f"Massimo tempo di pubblicazione: {max_age_minutes} minuti")
 
                         if link in published_posts:
-                            logger.info(f"Il post è già stato pubblicato: {link}")
                             continue
 
                         if age_minutes <= max_age_minutes:
-                            logger.info(f"Post pubblicato di recente: {link}")
                             post_links.append(link)
                             published_posts.add(link)
                             self.last_check_time[username] = post_time
-                        else:
-                            logger.info(f"Post non pubblicato di recente: {link} - età: {post_age}")
             except Exception as e:
                 logger.error(f"Errore durante la recupero dei post per {username} su {platform}: {e}")
 
-        logger.info(f"Recuperati {len(post_links)} post per {len(usernames)} utenti su {platform}")
         return post_links
     
     def get_steem_dynamic_global_properties(self):
@@ -315,15 +308,16 @@ class Blockchain:
                     raise Exception(response.reason)
                 
 ############################################################################################# Delegators
-                
     def get_steem_delegators(self):
         for node_url in self.node_urls.get('steem'):
             if not self.ping_server(node_url):
                 logger.error(f"Server non raggiungibile: {node_url}")
                 continue
-
+        
         stm = Steem(node=node_url)
-        acc = Account(steem_curator, blockchain_instance=stm)
+        # Ottieni le credenziali del curatore dal servizio di impostazioni se possibile
+        curator_info = self.get_curator_info('steem')
+        acc = Account(curator_info['username'], blockchain_instance=stm)
         
         # Ottieni l'ultima operazione processata dal database
         last_processed = Delegator.query.order_by(Delegator.timestamp.desc()).first()
@@ -384,17 +378,18 @@ class Blockchain:
             op = change['data']
             try:
                 memo = "Grazie per la nuova delegazione!" if change['type'] == 'new' else "Grazie per aver aggiornato la tua delegazione!"
-                
                 tx = TransactionBuilder(blockchain_instance=stm)
+                # Ottieni le credenziali del curatore
+                curator_info = self.get_curator_info('steem')
                 tx.appendOps(Transfer(
                     **{
-                        'from': steem_curator,
+                        'from': curator_info['username'],
                         'to': op['delegator'],
                         'amount': '0.001 STEEM',
                         'memo': memo
                     }
                 ))
-                tx.appendWif(steem_active_key)
+                tx.appendWif(curator_info['active_key'])
                 tx.sign()
                 tx.broadcast()
                 
@@ -964,3 +959,24 @@ class Blockchain:
         except Exception as e:
             logger.error(f"Errore nel recupero dei post precedenti di @{author}: {str(e)}")
             return []
+    
+    def get_curator_info(self, platform):
+        """Ottiene le informazioni del curatore dalla configurazione o dal database"""
+        if SettingsService:
+            # Ottieni le informazioni dal servizio di impostazioni
+            curator_info = SettingsService.get_curator_info(platform)
+            return curator_info
+        else:
+            # Fallback ai valori di configurazione
+            from .config import steem_curator, steem_curator_posting_key, steem_active_key, hive_curator, hive_curator_posting_key
+            if platform == 'steem':
+                return {
+                    'username': steem_curator,
+                    'posting_key': steem_curator_posting_key,
+                    'active_key': steem_active_key
+                }
+            else:
+                return {
+                    'username': hive_curator,
+                    'posting_key': hive_curator_posting_key
+                }

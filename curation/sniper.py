@@ -7,22 +7,28 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 
 from .components.logger_config import logger
-from .components.config import (
-    steem_domain, hive_domain, admin_id, TOKEN, 
-    steem_curator, steem_curator_posting_key, 
-    hive_curator, hive_curator_posting_key,
-    TEST
-)
+from .components.config import steem_domain, hive_domain, admin_id, TOKEN
 from .components.beem import Blockchain
 from .services.user_service import UserService
+from .services.settings_service import SettingsService
 
 
 class SocialMediaPublisher:
     def __init__(self, app=None):
+        self.app = app
+        # Inizializza le impostazioni per i test
+        self.is_test_mode = True
+        # Carica la modalità test dal database se possibile
+        try:
+            self.is_test_mode = SettingsService.is_test_mode(app)
+        except:
+            # In caso di errore, usa il valore predefinito
+            self.is_test_mode = True
+            
+        # Inizializza l'istanza di blockchain
         self.beem = Blockchain()
         self.published_links = {"steem": set(), "hive": set()}
         self.running = True
-        self.app = app
     
     def update_user_data(self):
         """Raccoglie gli utenti per piattaforma usando direttamente il database."""
@@ -73,18 +79,20 @@ class SocialMediaPublisher:
             logger.debug(f"Nessun utente trovato per il post {post_link}")
             return
         
-        try:
-            # Controlla se l'utente ha attivato la modalità automatica
+        try:            # Controlla se l'utente ha attivato la modalità automatica
             use_optimal_time = user_data.get('useOptimalTime', False) or user_data.get('voteDelay') == 'auto'
             
             # Recupera il peso del voto dall'utente
             vote_weight = user_data['voteWeight']
-            curator = steem_curator if platform == "steem" else hive_curator
-            curator_key = steem_curator_posting_key if platform == "steem" else hive_curator_posting_key
             
-            curator_info = self.beem.get_steem_profile_info(curator) if platform == "steem" else self.beem.get_hive_profile_info(curator)
-            last_vote_time = curator_info['result'][0]['last_vote_time']
-            old_voting_power = curator_info['result'][0]['voting_power'] / 100
+            # Recupera le informazioni del curatore dal servizio di impostazioni
+            curator_info_db = self.beem.get_curator_info(platform)
+            curator = curator_info_db['username']
+            curator_key = curator_info_db['posting_key']
+              # Ottieni le informazioni sul profilo del curatore dalla blockchain
+            curator_profile = self.beem.get_steem_profile_info(curator) if platform == "steem" else self.beem.get_hive_profile_info(curator)
+            last_vote_time = curator_profile['result'][0]['last_vote_time']
+            old_voting_power = curator_profile['result'][0]['voting_power'] / 100
             voting_power = self.beem.calculate_voting_power(last_vote_time, old_voting_power)
             
             author = self.beem.get_steem_author(post_link) if platform == "steem" else self.beem.get_hive_author(post_link)
@@ -137,18 +145,18 @@ class SocialMediaPublisher:
                 if not self.running:
                     logger.info("Publisher fermato durante l'attesa del voto")
                     return
-                    
+                
                 if minutes_until_vote > 0:
                     logger.info(f"Waiting {minutes_until_vote:.1f} minutes before voting...")
                     self._safe_sleep(minutes_until_vote * 60)
                 
-                if TEST:
+                if self.is_test_mode:
                     logger.info(f"Voting: {author} {permlink} {vote_weight}")
                 else:
                     if platform == "steem":
-                        self.beem.like_steem_post(voter=steem_curator, voted=author, permlink=permlink, private_posting_key=steem_curator_posting_key, weight=vote_weight)
+                        self.beem.like_steem_post(voter=curator, voted=author, permlink=permlink, private_posting_key=curator_key, weight=vote_weight)
                     else:
-                        self.beem.like_hive_post(voter=hive_curator, voted=author, permlink=permlink, private_posting_key=hive_curator_posting_key, weight=vote_weight)
+                        self.beem.like_hive_post(voter=curator, voted=author, permlink=permlink, private_posting_key=curator_key, weight=vote_weight)
                 self.send_telegram_message(TOKEN, admin_id, "Voted!")
             else:
                 self.send_telegram_message(TOKEN, admin_id, "Not Voted! Voting power too low.")
