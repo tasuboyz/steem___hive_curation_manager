@@ -1,5 +1,4 @@
-from flask import request, jsonify, render_template, redirect, url_for, flash
-from curation.components.db import User, db
+from flask import request, jsonify, render_template
 from curation.components.logger_config import logger
 from curation.components.config import TEST
 from curation.components.factory import create_app, init_services, app_state
@@ -198,6 +197,47 @@ def update_test_mode():
     if success:
         return jsonify({'message': 'Test mode updated successfully'})
     return jsonify({'error': 'Error updating test mode'}), 500
+
+@app.route('/api/bot/info', methods=['GET'])
+def get_bot_info():
+    """Ottiene le informazioni del bot Telegram"""
+    admin_ids = SettingsService.get_setting('admin_ids', default='')
+    bot_token = SettingsService.get_setting('bot_token', default='')
+    
+    # Prepara i dati per il frontend (nascondi parzialmente il token per sicurezza)
+    masked_token = ""
+    if bot_token:
+        parts = bot_token.split(':')
+        if len(parts) == 2:
+            masked_token = f"{parts[0]}:{'*' * (len(parts[1]) - 4)}{parts[1][-4:]}"
+    
+    return jsonify({
+        'admin_ids': admin_ids,
+        'bot_token': bot_token,
+        'masked_token': masked_token,
+        'token_set': bool(bot_token)
+    })
+
+@app.route('/api/bot/update', methods=['POST'])
+def update_bot_info():
+    """Aggiorna le informazioni del bot Telegram"""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'Missing required parameters'}), 400
+    
+    success = True
+    
+    # Aggiorna gli admin IDs se forniti
+    if 'admin_ids' in data:
+        success = success and SettingsService.set_setting('admin_ids', data['admin_ids'])
+    
+    # Aggiorna il token del bot se fornito
+    if 'bot_token' in data and data['bot_token']:
+        success = success and SettingsService.set_setting('bot_token', data['bot_token'])
+    
+    if success:
+        return jsonify({'message': 'Bot information updated successfully'})
+    return jsonify({'error': 'Error updating bot information'}), 500
 
 def handle_shutdown(signal, frame):
     """Gestisce l'arresto pulito dell'applicazione"""

@@ -1,4 +1,3 @@
-
 /* Stili specifici per la pagina delle impostazioni */
 .form-content {
   padding: 1rem;
@@ -261,4 +260,25 @@
 
 .nav-btn:hover {
   background-color: var(--border-color);
+}
+
+/* Telegram Bot Settings Specific Styles */
+.form-field small.description {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+}
+
+#botSettingsForm .form-field {
+  margin-bottom: 1.5rem;
+}
+
+#adminIds {
+  width: 100%;
+  padding: 0.5rem;
+}
+
+.fab.fa-telegram {
+  color: #0088cc; /* Telegram brand color */
 }

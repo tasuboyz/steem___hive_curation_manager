@@ -1,13 +1,10 @@
-import json
 import requests
-import logging
 import time
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from collections import defaultdict
 
 from .components.logger_config import logger
-from .components.config import steem_domain, hive_domain, admin_id, TOKEN
+from .components.config import steem_domain, hive_domain
 from .components.beem import Blockchain
 from .services.user_service import UserService
 from .services.settings_service import SettingsService
@@ -79,22 +76,17 @@ class SocialMediaPublisher:
             logger.debug(f"Nessun utente trovato per il post {post_link}")
             return
         
-        try:            # Controlla se l'utente ha attivato la modalità automatica
+        try:
             use_optimal_time = user_data.get('useOptimalTime', False) or user_data.get('voteDelay') == 'auto'
-            
-            # Recupera il peso del voto dall'utente
             vote_weight = user_data['voteWeight']
-            
-            # Recupera le informazioni del curatore dal servizio di impostazioni
             curator_info_db = self.beem.get_curator_info(platform)
             curator = curator_info_db['username']
             curator_key = curator_info_db['posting_key']
-              # Ottieni le informazioni sul profilo del curatore dalla blockchain
+            curator_active_key = curator_info_db.get('active_key')
             curator_profile = self.beem.get_steem_profile_info(curator) if platform == "steem" else self.beem.get_hive_profile_info(curator)
             last_vote_time = curator_profile['result'][0]['last_vote_time']
             old_voting_power = curator_profile['result'][0]['voting_power'] / 100
             voting_power = self.beem.calculate_voting_power(last_vote_time, old_voting_power)
-            
             author = self.beem.get_steem_author(post_link) if platform == "steem" else self.beem.get_hive_author(post_link)
             permlink = self.beem.get_steem_permlink(post_link) if platform == "steem" else self.beem.get_hive_permlink(post_link)
             
@@ -131,10 +123,12 @@ class SocialMediaPublisher:
                 # Usa il tempo di ritardo specificato dall'utente
                 vote_delay = user_data['voteDelay']
                 telegram_message = f"[{platform.upper()}] (VP: {voting_power:.2f}, DELAY: {vote_delay} min)\n{post_link}"
-            
-            # Invia messaggio con informazioni sul voto pianificato
-            self.send_telegram_message(TOKEN, admin_id, telegram_message)
-            
+
+                # Recupera dinamicamente admin_ids e bot_token
+                admin_ids = SettingsService.get_setting('admin_ids', default='', app=self.app)
+                bot_token = SettingsService.get_setting('bot_token', default='', app=self.app)
+                self.send_telegram_message(bot_token, admin_ids, telegram_message)
+
             if voting_power > 89:
                 post = self.beem.get_comment(author=author, permalink=permlink, blockchain=platform)
                 created_time = post['created']
@@ -157,39 +151,44 @@ class SocialMediaPublisher:
                         self.beem.like_steem_post(voter=curator, voted=author, permlink=permlink, private_posting_key=curator_key, weight=vote_weight)
                     else:
                         self.beem.like_hive_post(voter=curator, voted=author, permlink=permlink, private_posting_key=curator_key, weight=vote_weight)
-                self.send_telegram_message(TOKEN, admin_id, "Voted!")
+                # Notifica dopo il voto
+                self.send_telegram_message(bot_token, admin_ids, "Voted!")
             else:
-                self.send_telegram_message(TOKEN, admin_id, "Not Voted! Voting power too low.")
+                self.send_telegram_message(bot_token, admin_ids, "Not Voted! Voting power too low.")
         except Exception as e:
             logger.error(f"Errore durante la gestione del voto per {post_link}: {str(e)}")
-            self.send_telegram_message(TOKEN, admin_id, f"Error during vote: {str(e)}")
+            # Notifica errore
+            admin_ids = SettingsService.get_setting('admin_ids', default='', app=self.app)
+            bot_token = SettingsService.get_setting('bot_token', default='', app=self.app)
+            self.send_telegram_message(bot_token, admin_ids, f"Error during vote: {str(e)}")
 
     def publish_posts(self):
         """Controlla e pubblica nuovi post periodicamente."""
         logger.info("Avvio del publisher dei post")
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            while self.running:
-                try:
-                    platform_users = self.update_user_data()
-                    futures = {
-                        executor.submit(self.process_posts, platform, users): platform 
-                        for platform, users in platform_users.items() if users
-                    }
-                    
-                    for future in as_completed(futures):
-                        try:
-                            future.result()
-                        except Exception as e:
-                            platform = futures[future]
-                            logger.error(f"Errore nell'elaborazione dei post per {platform}: {str(e)}")
-                    
-                    self._safe_sleep(5)  # Attendi tra le iterazioni
-                except Exception as e:
-                    logger.error(f"Errore nel ciclo principale del publisher: {str(e)}")
-                    self._safe_sleep(10)  # Attendi un po' più a lungo in caso di errore
+        with self.app.app_context():
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                while self.running:
+                    try:
+                        platform_users = self.update_user_data()
+                        futures = {
+                            executor.submit(self.process_posts, platform, users): platform 
+                            for platform, users in platform_users.items() if users
+                        }
+                        
+                        for future in as_completed(futures):
+                            try:
+                                future.result()
+                            except Exception as e:
+                                platform = futures[future]
+                                logger.error(f"Errore nell'elaborazione dei post per {platform}: {str(e)}")
+                        
+                        self._safe_sleep(5)  # Attendi tra le iterazioni
+                    except Exception as e:
+                        logger.error(f"Errore nel ciclo principale del publisher: {str(e)}")
+                        self._safe_sleep(10)  # Attendi un po' più a lungo in caso di errore
         
-        logger.info("Publisher dei post fermato")
-
+        logger.info("Publisher dei post fermato")    
+        
     def _safe_sleep(self, seconds):
         """Sleep che può essere interrotto quando self.running diventa False."""
         start_time = time.time()
@@ -202,10 +201,28 @@ class SocialMediaPublisher:
         self.running = False
 
     def send_telegram_message(self, bot_token, chat_id, message):
-        try:
-            url = f"https://api.telegram.org/bot{bot_token}/sendMessage?chat_id={chat_id}&text={message}"
-            response = requests.get(url)
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error telegram server {e}")
+        """
+        Invia un messaggio Telegram a uno o più utenti.
+        
+        Args:
+            bot_token (str): Token del bot Telegram
+            chat_id (str): ID chat o lista di ID separati da virgola
+            message (str): Messaggio da inviare
+        """
+        if not bot_token or not chat_id:
+            logger.warning("Token del bot o chat_id mancanti, impossibile inviare messaggio Telegram")
             return False
+            
+        # Supporto per più admin ID
+        chat_ids = [id.strip() for id in chat_id.split(',') if id.strip()]
+        
+        results = []
+        for id in chat_ids:
+            try:
+                url = f"https://api.telegram.org/bot{bot_token}/sendMessage?chat_id={id}&text={message}"
+                response = requests.get(url)
+                results.append(response.json())
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Errore comunicazione con server Telegram per chat_id {id}: {e}")
+        
+        return results

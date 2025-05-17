@@ -23,8 +23,7 @@ class SettingsManager {
     // Carica i dati iniziali
     this.loadSettings();
   }
-  
-  setupEventListeners() {
+    setupEventListeners() {
     // Event listener per il tema
     this.themeToggle.addEventListener('click', () => this.toggleTheme());
     
@@ -35,13 +34,18 @@ class SettingsManager {
     this.steemForm.addEventListener('submit', e => this.handleSteemFormSubmit(e));
     this.hiveForm.addEventListener('submit', e => this.handleHiveFormSubmit(e));
     
+    // Event listener per il form del bot
+    const botForm = document.getElementById('botSettingsForm');
+    if (botForm) {
+      botForm.addEventListener('submit', e => this.handleBotFormSubmit(e));
+    }
+    
     // Event listeners per i campi password
     document.querySelectorAll('.toggle-visibility').forEach(btn => {
       btn.addEventListener('click', e => this.togglePasswordVisibility(e.currentTarget));
     });
   }
-  
-  async loadSettings() {
+    async loadSettings() {
     try {
       // Carica la modalità test
       const testModeResponse = await apiService.sendRequest('/api/test_mode', 'GET');
@@ -86,6 +90,27 @@ class SettingsManager {
         } else {
           hivePostingKeyStatus.classList.add('not-set');
           hivePostingKeyStatus.classList.remove('is-set');
+        }
+      }
+      
+      // Carica le impostazioni del bot
+      const botInfoResponse = await apiService.sendRequest('/api/bot/info', 'GET');
+      if (botInfoResponse.success) {
+        document.getElementById('adminIds').value = botInfoResponse.data.admin_ids || '';
+        
+        // Per il token, mostriamo una versione mascherata se è impostato
+        if (botInfoResponse.data.token_set) {
+          document.getElementById('botToken').placeholder = botInfoResponse.data.masked_token || '********';
+        }
+        
+        // Aggiorna lo stato del token
+        const botTokenStatus = document.querySelector('#botToken').closest('.form-field').querySelector('.key-status');
+        if (botInfoResponse.data.token_set) {
+          botTokenStatus.classList.add('is-set');
+          botTokenStatus.classList.remove('not-set');
+        } else {
+          botTokenStatus.classList.add('not-set');
+          botTokenStatus.classList.remove('is-set');
         }
       }
     } catch (error) {
@@ -202,10 +227,45 @@ class SettingsManager {
   }
   
   updateTheme() {
-    if (this.themeDark) {
-      document.body.classList.add('dark-theme');
-    } else {
-      document.body.classList.remove('dark-theme');
+    document.documentElement.setAttribute('data-theme', this.themeDark ? 'dark' : 'light');
+    this.themeToggle.setAttribute('aria-label', this.themeDark ? 'Switch to light theme' : 'Switch to dark theme');
+  }
+  
+  async handleBotFormSubmit(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const data = {
+      admin_ids: formData.get('admin_ids'),
+      bot_token: formData.get('bot_token')
+    };
+    
+    try {
+      const response = await apiService.sendRequest('/api/bot/update', 'POST', data);
+      
+      if (response.success) {
+        this.showNotification('Impostazioni del bot salvate con successo', 'success');
+        
+        // Aggiorna lo stato del token
+        if (data.bot_token) {
+          const tokenStatus = document.querySelector('#botToken').closest('.form-field').querySelector('.key-status');
+          tokenStatus.classList.add('is-set');
+          tokenStatus.classList.remove('not-set');
+          
+          // Pulisci il campo password e aggiorna il placeholder
+          const botTokenInput = document.getElementById('botToken');
+          const maskedToken = data.bot_token.split(':')[0] + ':' + 
+                            '*'.repeat(data.bot_token.split(':')[1].length - 4) + 
+                            data.bot_token.split(':')[1].slice(-4);
+          botTokenInput.value = '';
+          botTokenInput.placeholder = maskedToken;
+        }
+      } else {
+        this.showNotification('Errore nel salvataggio delle impostazioni del bot', 'error');
+      }
+    } catch (error) {
+      this.showNotification('Errore nella comunicazione con il server', 'error');
+      console.error('Error updating bot settings:', error);
     }
   }
   

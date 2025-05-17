@@ -49,6 +49,7 @@ def update_config_from_db(settings_service):
     """Aggiorna le variabili di configurazione utilizzando i valori dal database"""
     global TEST, log_level, steem_curator, steem_curator_posting_key
     global hive_curator, hive_curator_posting_key, steem_active_key
+    global admin_id, TOKEN
     
     # Recupera la modalità test
     test_mode = settings_service.get_setting('test_mode', default='true')
@@ -65,3 +66,7 @@ def update_config_from_db(settings_service):
     # Recupera le informazioni del curatore per Hive
     hive_curator = settings_service.get_setting('hive_curator', default=hive_curator)
     hive_curator_posting_key = settings_service.get_setting('hive_curator_posting_key', default='')
+    
+    # Recupera admin_ids e bot_token
+    admin_id = settings_service.get_setting('admin_ids', default=admin_id)
+    TOKEN = settings_service.get_setting('bot_token', default=TOKEN)

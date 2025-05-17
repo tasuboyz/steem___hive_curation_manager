@@ -88,8 +88,7 @@
               <i class="fas fa-save"></i> Save Steem Settings
             </button>
           </div>
-        </form>
-      </section>
+        </form>      </section>
 
       <!-- HIVE Curator Settings -->
       <section class="card">
@@ -119,6 +118,45 @@
           <div class="form-actions">
             <button type="submit" class="primary-btn">
               <i class="fas fa-save"></i> Save Hive Settings
+            </button>
+          </div>
+        </form>
+      </section>
+      
+      <!-- Telegram Bot Settings -->
+      <section class="card">
+        <div class="section-header">
+          <i class="fab fa-telegram"></i>
+          <h2>Telegram Bot Settings</h2>
+        </div>
+        <form id="botSettingsForm" class="form-content">
+          <div class="form-field">
+            <label for="adminIds">Admin IDs (comma separated):</label>
+            <input type="text" id="adminIds" name="admin_ids" placeholder="1234567,7654321">
+            <small class="description">
+              Multiple admin IDs should be separated by comma without spaces.
+            </small>
+          </div>
+          <div class="form-field">
+            <label for="botToken">Bot Token:</label>
+            <div class="password-field">
+              <input type="password" id="botToken" name="bot_token" placeholder="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ">
+              <button type="button" class="toggle-visibility">
+                <i class="fas fa-eye"></i>
+                <i class="fas fa-eye-slash"></i>
+              </button>
+            </div>
+            <small class="key-status">
+              <span class="key-set">Token is set <i class="fas fa-check-circle"></i></span>
+              <span class="key-not-set">Token is not set <i class="fas fa-exclamation-circle"></i></span>
+            </small>
+            <small class="description">
+              You can get a bot token from @BotFather on Telegram.
+            </small>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="primary-btn">
+              <i class="fas fa-save"></i> Save Bot Settings
             </button>
           </div>
         </form>
