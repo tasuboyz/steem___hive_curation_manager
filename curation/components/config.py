@@ -30,7 +30,7 @@ steem_domain ="https://steemit.com"
 hive_domain ="https://peakd.com"
 
 admin_id = "1026795763"
-TOKEN = "8097569551:AAHYAXhuJ6J3sfPoIqBO681eFi-XgbuZA-0"
+TOKEN = ""
 
 # Valori predefiniti che verranno sostituiti dalle impostazioni nel database
 steem_curator = "tasuboyz"

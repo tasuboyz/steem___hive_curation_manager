@@ -14,7 +14,7 @@ class SettingsService:
         'hive_curator': 'menny.trx',
         'hive_curator_posting_key': '',  # Le chiavi vengono impostate tramite UI
         'admin_ids': '1026795763',  # Lista di admin IDs separati da virgola
-        'bot_token': '8097569551:AAHYAXhuJ6J3sfPoIqBO681eFi-XgbuZA-0',  # Token del bot
+        'bot_token': '',  # Token del bot
     }
     
     @staticmethod
