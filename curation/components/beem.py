@@ -21,7 +21,7 @@ except ImportError:
     SettingsService = None
 
 class Blockchain:
-    def __init__(self, mode='irreversible'):
+    def __init__(self, mode='irreversible', app=None):
         self.mode = mode
         # self.tester = SteemNodeTester()
         self.update_interval = 60
@@ -34,6 +34,7 @@ class Blockchain:
         self._cache_path = os.path.join(os.path.dirname(__file__), "../../instance/voters_cache.pkl")
         # Inizializza la blockchain di riferimento (usata in get_post_voters)
         self.blockchain = None
+        self.app = app  # Salva l'app Flask se fornita
         
         # Carica la cache esistente se disponibile
         self._load_cache()
@@ -65,6 +66,7 @@ class Blockchain:
             if len(data['result']) > 0:
                 return data
             else:
+                logger.error(f"user not exist: username={username}, node={node_url}, response={data}")
                 raise Exception("user not exist")
         else:
             raise Exception(response.reason)
@@ -964,7 +966,7 @@ class Blockchain:
         """Ottiene le informazioni del curatore dalla configurazione o dal database"""
         if SettingsService:
             # Ottieni le informazioni dal servizio di impostazioni
-            curator_info = SettingsService.get_curator_info(platform)
+            curator_info = SettingsService.get_curator_info(platform, app=self.app)
             return curator_info
         else:
             # Fallback ai valori di configurazione

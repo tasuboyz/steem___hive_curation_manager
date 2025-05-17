@@ -23,7 +23,7 @@ class SocialMediaPublisher:
             self.is_test_mode = True
             
         # Inizializza l'istanza di blockchain
-        self.beem = Blockchain()
+        self.beem = Blockchain(app=self.app)
         self.published_links = {"steem": set(), "hive": set()}
         self.running = True
     

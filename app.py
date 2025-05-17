@@ -10,7 +10,7 @@ import sys
 import os
 
 app = create_app()
-blockchain_connector = Blockchain()  # Istanza globale per la classe Blockchain
+blockchain_connector = Blockchain(app=app)  # Istanza globale per la classe Blockchain
 
 # Definire le route
 @app.route('/')
