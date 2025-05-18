@@ -131,6 +131,12 @@ class SocialMediaPublisher:
 
             if voting_power > 89:
                 post = self.beem.get_comment(author=author, permalink=permlink, blockchain=platform)
+                # Controlla se il curatore ha già votato il post
+                already_voted = any(v['voter'] == curator for v in post['votes'])
+                if already_voted:
+                    logger.info(f"{curator} ha già votato il post {author}/{permlink} su {platform}")
+                    self.send_telegram_message(bot_token, admin_ids, "Already voted!")
+                    return
                 created_time = post['created']
                 target_vote_time = created_time + timedelta(minutes=vote_delay)
                 time_until_vote = target_vote_time - datetime.now(timezone.utc)
