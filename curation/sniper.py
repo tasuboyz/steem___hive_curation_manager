@@ -132,6 +132,8 @@ class SocialMediaPublisher:
             if voting_power > 89:
                 post = self.beem.get_comment(author=author, permalink=permlink, blockchain=platform)
                 created_time = post['created']
+                votes = getattr(post, 'active_votes', [])
+                ready_voted = any(v.get('voter') == curator for v in votes)
                 target_vote_time = created_time + timedelta(minutes=vote_delay)
                 time_until_vote = target_vote_time - datetime.now(timezone.utc)
                 minutes_until_vote = time_until_vote.total_seconds() / 60
