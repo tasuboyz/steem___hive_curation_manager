@@ -137,6 +137,11 @@ class SocialMediaPublisher:
                 target_vote_time = created_time + timedelta(minutes=vote_delay)
                 time_until_vote = target_vote_time - datetime.now(timezone.utc)
                 minutes_until_vote = time_until_vote.total_seconds() / 60
+
+                if ready_voted:
+                    self.send_telegram_message(bot_token, admin_ids, f"Already voted for {post_link}")
+                    logger.info(f"Already voted for {post_link}")
+                    return
                 
                 if not self.running:
                     logger.info("Publisher fermato durante l'attesa del voto")
