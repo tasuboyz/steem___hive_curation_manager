@@ -10,7 +10,7 @@ import pickle
 import aiohttp
 from .config import node_list
 from .logger_config import logger
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from .instance import published_posts, last_check_time
 from beem.transactionbuilder import TransactionBuilder
 from beembase.operations import Transfer
@@ -693,6 +693,10 @@ class Blockchain:
             start_time = time.time()
             from beem.vote import Vote
             
+            # Imposta un limite massimo di votanti da analizzare in dettaglio
+            max_detailed_voters = 10  # Limite per analisi dettagliate
+            max_total_voters = 30  # Limite totale di votanti da considerare
+            
             # Usa un timeout più breve per evitare blocchi lunghi
             comment = Comment(post_url, blockchain_instance=self.blockchain)
             # Ottiene i dati completi del post
@@ -713,14 +717,15 @@ class Blockchain:
             
             logger.info(f"Trovati {len(active_votes)} voti per il post {post_url}")
             
-            # Ottimizzazione: limita il numero di voti da analizzare per post con molti voti
-            max_votes_to_process = 50  # Imposta un limite ragionevole
-            if len(active_votes) > max_votes_to_process:
-                # Ordina preliminarmente per rshares se disponibili
-                if 'rshares' in active_votes[0]:
-                    active_votes.sort(key=lambda v: float(v.get('rshares', 0)), reverse=True)
-                active_votes = active_votes[:max_votes_to_process]
-                logger.info(f"Limitata analisi ai top {max_votes_to_process} voti per {post_url}")
+            # Pre-filtraggio: prima ordina i voti per rshares se disponibili
+            if active_votes and 'rshares' in active_votes[0]:
+                active_votes.sort(key=lambda v: float(v.get('rshares', 0)), reverse=True)
+                active_votes = active_votes[:max_total_voters]  # Prendi solo i top N voti per rshares
+                logger.info(f"Pre-filtrati i top {max_total_voters} voti per {post_url} basati su rshares")
+            else:
+                # Se non possiamo ordinare per rshares, limita comunque il numero totale
+                active_votes = active_votes[:max_total_voters]
+                logger.info(f"Limitati a {max_total_voters} voti senza pre-ordinamento per {post_url}")
             
             # Get voters data
             voters_data = []
@@ -735,8 +740,8 @@ class Blockchain:
                     # Prima prova a ottenere rshares direttamente dal voto (più veloce)
                     vote_rshares = float(vote_data.get('rshares', 0))
                     
-                    # Se non ci sono rshares significativi, passa al votante successivo (ottimizzazione)
-                    if vote_rshares < 1000000 and processed_voters > 10:
+                    # Salta rapidamente i voti non significativi se abbiamo superato il limite per analisi dettagliate
+                    if processed_voters > max_detailed_voters and vote_rshares < 1e7:  # 10M rshares come soglia
                         continue
                     
                     # Estrai informazioni dirette dal voto quando disponibili
@@ -749,30 +754,30 @@ class Blockchain:
                         if vote_time.tzinfo is None:
                             vote_time = vote_time.replace(tzinfo=timezone.utc)
                     
-                    # Se non abbiamo il timestamp nel voto base, prova con l'oggetto Vote (più lento)
+                    # Se non abbiamo il timestamp nel voto base, usa il timestamp del post o il timestamp corrente
                     if not vote_time:
-                        try:
-                            vote = Vote(voter_name, post_url, blockchain_instance=self.blockchain)
-                            vote_time = vote.time
-                            if vote_time.tzinfo is None:
-                                vote_time = vote_time.replace(tzinfo=timezone.utc)
-                            
-                            if not vote_rshares or vote_rshares == 0:
-                                vote_rshares = float(vote.rshares)
-                            
-                            if not vote_percent or vote_percent == 0:
-                                vote_percent = vote.weight
-                        except Exception as vote_error:
-                            # Se fallisce anche questo, usa una stima
-                            if 'last_update' in vote_data:
-                                vote_time = vote_data.get('last_update')
-                                if isinstance(vote_time, str):
-                                    vote_time = datetime.strptime(vote_time, '%Y-%m-%dT%H:%M:%S')
+                        if 'last_update' in vote_data:
+                            vote_time = datetime.strptime(vote_data['last_update'], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=timezone.utc)
+                        else:
+                            # Per votanti top (importanti), vale la pena cercare il tempo preciso
+                            if processed_voters <= max_detailed_voters:
+                                try:
+                                    vote = Vote(voter_name, post_url, blockchain_instance=self.blockchain)
+                                    vote_time = vote.time
                                     if vote_time.tzinfo is None:
                                         vote_time = vote_time.replace(tzinfo=timezone.utc)
+                                    
+                                    if not vote_rshares or vote_rshares == 0:
+                                        vote_rshares = float(vote.rshares)
+                                    
+                                    if not vote_percent or vote_percent == 0:
+                                        vote_percent = vote.weight
+                                except Exception as vote_error:
+                                    logger.debug(f"Errore nel recupero dati voto per {voter_name}: {vote_error}")
+                                    vote_time = post_created + timedelta(hours=1)  # stima
                             else:
-                                # Ultimo tentativo: usa il timestamp attuale
-                                vote_time = datetime.now(timezone.utc)
+                                # Per votanti meno importanti, usa una stima
+                                vote_time = post_created + timedelta(hours=1)
                     
                     # Calcola il ritardo del voto in minuti
                     vote_delay_minutes = int((vote_time - post_created).total_seconds() / 60)
@@ -780,13 +785,14 @@ class Blockchain:
                     # Calcola l'importanza usando rshares direttamente se disponibili
                     importance = vote_rshares / 1e12  # Normalizza per leggibilità
                     
-                    # Solo se l'importanza è troppo bassa, ottieni ulteriori informazioni sull'account
+                    # Solo per i top votanti, ottieni ulteriori informazioni sull'account
                     vests = 0
                     reputation = 0
                     
-                    if importance < min_importance and processed_voters <= 10:
+                    # Per i primi N votanti o quelli con rshares significativi, ottieni dettagli aggiuntivi
+                    if processed_voters <= max_detailed_voters or vote_rshares >= 1e9:  # 1B rshares come soglia
                         try:
-                            # Ottimizzazione: ottieni informazioni sull'account solo se necessario
+                            # Cache locale temporanea per account (durante questa esecuzione)
                             voter_account = Account(voter_name, blockchain_instance=self.blockchain)
                             vests = float(voter_account['vesting_shares'].amount) + float(voter_account['received_vesting_shares'].amount) - float(voter_account['delegated_vesting_shares'].amount)
                             importance = max(importance, vests / 1e6)  # Usa il valore maggiore tra rshares e vests
@@ -812,6 +818,11 @@ class Blockchain:
             # Sort by importance (vesting shares o rshares)
             voters_data.sort(key=lambda x: x['importance'], reverse=True)
             
+            # Limita il risultato finale ai votanti più importanti
+            final_voters_limit = max(20, max_detailed_voters)  # Mantieni almeno questo numero di votanti importanti
+            if len(voters_data) > final_voters_limit:
+                voters_data = voters_data[:final_voters_limit]
+            
             # Logga il tempo totale di esecuzione e i primi votanti importanti
             execution_time = time.time() - start_time
             logger.info(f"Analisi votanti completata in {execution_time:.2f} secondi")
@@ -822,10 +833,10 @@ class Blockchain:
                 logger.info(f"Top votanti per {post_url}: {', '.join(top_voters)}")
             
             # Save to cache if the operation was successful
-            if use_cache:
+            if use_cache and voters_data:
                 self._voters_cache[cache_key] = voters_data
-                # Save cache every 10 new entries
-                if len(self._voters_cache) % 10 == 0:
+                # Save cache every 5 new entries per migliorare la persistenza
+                if len(self._voters_cache) % 5 == 0:
                     self._save_cache()
             
             return voters_data
@@ -982,3 +993,46 @@ class Blockchain:
                     'username': hive_curator,
                     'posting_key': hive_curator_posting_key
                 }
+    
+    def get_votes_today(self, curator, author, platform):
+        """
+        Conta quanti voti il curatore ha dato all'autore nelle ultime 24 ore.
+        """
+        try:
+            # Scegli la blockchain corretta
+            if platform == "steem":
+                for node_url in self.node_urls.get('steem'):
+                    if self.ping_server(node_url):
+                        stm = Steem(node=node_url)
+                        break
+                else:
+                    logger.error("Nessun nodo Steem disponibile")
+                    return 0
+                account = Account(curator, blockchain_instance=stm)
+            else:
+                for node_url in self.node_urls.get('hive'):
+                    if self.ping_server(node_url):
+                        hive = Hive(node=node_url)
+                        break
+                else:
+                    logger.error("Nessun nodo Hive disponibile")
+                    return 0
+                account = Account(curator, blockchain_instance=hive)
+
+            now = datetime.now(timezone.utc)
+            since = now - timedelta(days=1)
+            votes = 0
+
+            # Scorri la history dei voti del curatore
+            for vote in account.get_account_votes():
+                # vote['author'], vote['time']
+                vote_time = vote.get('time')
+                if isinstance(vote_time, str):
+                    vote_time = datetime.strptime(vote_time, '%Y-%m-%dT%H:%M:%S')
+                    vote_time = vote_time.replace(tzinfo=timezone.utc)
+                if vote['author'] == author and vote_time > since:
+                    votes += 1
+            return votes
+        except Exception as e:
+            logger.error(f"Errore in get_votes_today: {e}")
+            return 0
