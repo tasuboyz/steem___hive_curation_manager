@@ -890,24 +890,25 @@ class Blockchain:
             delay_minutes = voter.get('vote_delay_minutes', 30)  # Default a 30 minuti se non specificato
             weight = importance / total_importance
             weighted_vote_time += delay_minutes * weight
-        
-        # Trova il votante più importante e il suo tempo di voto
+          # Trova il votante più importante e il suo tempo di voto
         most_important_voter = top_voters[0]
         most_important_time = most_important_voter.get('vote_delay_minutes', 30)
         
-        # Calcola il tempo di voto ottimale - leggermente prima del tempo medio ponderato
-        optimal_time = max(1, weighted_vote_time - buffer_minutes)
+        # Trova il votante importante che vota più presto
+        earliest_important_voter = min(top_voters, key=lambda x: x.get('vote_delay_minutes', 30))
+        earliest_vote_time = earliest_important_voter.get('vote_delay_minutes', 30)
         
-        # Supporto per la strategia "vote before whales"
-        if most_important_time < 10:  # Se il votante principale vota presto
-            # Vota appena prima di lui
-            optimal_time = max(0.5, most_important_time - buffer_minutes)
+        # Calcola il tempo di voto ottimale - leggermente prima del votante importante più veloce
+        optimal_time = max(0.5, earliest_vote_time - buffer_minutes)
+        
+        # Genera la spiegazione appropriata
+        if earliest_important_voter['voter'] == most_important_voter['voter']:
             explanation = f"Votare {buffer_minutes} minuti prima del votante più importante (@{most_important_voter.get('voter', 'sconosciuto')}) che vota dopo {most_important_time:.1f} minuti"
-            vote_window = (optimal_time - 0.2, optimal_time + 0.2)  # Finestra stretta
         else:
-            # Usa una strategia media
-            explanation = f"Votare in base alla media ponderata dei top {len(top_voters)} votanti (tempo medio: {weighted_vote_time:.1f} minuti)"
-            vote_window = (optimal_time - 1, optimal_time + 1)  # Finestra più ampia
+            explanation = f"Votare {buffer_minutes} minuti prima del primo votante importante (@{earliest_important_voter.get('voter', 'sconosciuto')}) che vota dopo {earliest_vote_time:.1f} minuti"
+        
+        # Finestra stretta per massimizzare la precisione
+        vote_window = (optimal_time - 0.2, optimal_time + 0.2)
         
         # Evita tempi di voto troppo precoci
         if optimal_time < 0.5:
