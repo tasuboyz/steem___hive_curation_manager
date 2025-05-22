@@ -1,5 +1,23 @@
 /**
- * UI Module - Gestisce l'interfaccia utente e gli elementi visuali
+ * UI Module - Gestisce l'interfaccia utente      const userCard = document.createElement('div');
+      userCard.className = 'user-card';      userCard.innerHTML = `
+        <div class="user-info">
+          <strong><i class="fas fa-user"></i> @${username}</strong>
+          <span><i class="fas fa-clock"></i> Vote Delay: ${data.voteDelay} minutes</span>
+          <span><i class="fas fa-percentage"></i> Vote Weight: ${data.voteWeight}%</span>
+          <span class="${(data.dailyVotesCount || 0) >= (data.votesPerDay || 1) ? 'vote-limit-reached' : ''}">
+            <i class="fas fa-calendar-day"></i> Votes: <span class="vote-count-badge">${data.dailyVotesCount || 0}/${data.votesPerDay || 1}</span> today
+          </span>
+          <div class="votes-progress-container">
+            <div class="votes-progress-bar ${(data.dailyVotesCount || 0) >= (data.votesPerDay || 1) ? 'limit-reached' : ''}" 
+                 style="width: ${Math.min(((data.dailyVotesCount || 0) / (data.votesPerDay || 1)) * 100, 100)}%">
+            </div>
+          </div>
+          <div class="latest-post" id="latest-post-${username}">
+            <div class="loading"><i class="fas fa-spinner fa-spin"></i> Loading latest post...</div>
+          </div>
+        </div>
+        <div class="user-settings">`nti visuali
  */
 
 class UIService {
@@ -48,12 +66,12 @@ class UIService {
       if (data.platform !== currentPlatform) continue;
 
       const userCard = document.createElement('div');
-      userCard.className = 'user-card';
-      userCard.innerHTML = `
+      userCard.className = 'user-card';      userCard.innerHTML = `
         <div class="user-info">
           <strong><i class="fas fa-user"></i> @${username}</strong>
           <span><i class="fas fa-clock"></i> Vote Delay: ${data.voteDelay} minutes</span>
           <span><i class="fas fa-percentage"></i> Vote Weight: ${data.voteWeight}%</span>
+          <span><i class="fas fa-calendar-day"></i> Votes: ${data.dailyVotesCount || 0}/${data.votesPerDay || 1} today</span>
           <div class="latest-post" id="latest-post-${username}">
             <div class="loading"><i class="fas fa-spinner fa-spin"></i> Loading latest post...</div>
           </div>

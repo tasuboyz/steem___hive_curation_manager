@@ -115,15 +115,18 @@ class CurationApp {
       
       if (!accounts || accounts.length === 0) {
         throw new Error('User not found');
-      }
-
+      }      const votesPerDay = parseInt(document.getElementById('votesPerDay').value);
+      
       const userData = {
         username,
         platform: this.currentPlatform,
         voteDelay,
         voteWeight,
+        votesPerDay,
         useOptimalTime,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        dailyVotesCount: 0,
+        lastVoteDate: null
       };
 
       // Try API first, but continue even if it fails
@@ -193,8 +196,7 @@ class CurationApp {
             Posts will be voted ${useOptimalTime ? 'at optimal time (auto)' : userData.voteDelay + ' minutes after publication'}
           </div>
         </div>
-        
-        <div class="setting">
+          <div class="setting">
           <label for="editVoteWeight">
             <i class="fas fa-percentage"></i> Vote Weight
           </label>
@@ -208,6 +210,24 @@ class CurationApp {
           >
           <div class="input-feedback weight-feedback">
             Votes will be cast at ${userData.voteWeight}% strength
+          </div>
+        </div>
+          <div class="setting votes-per-day-setting">
+          <label for="editVotesPerDay">
+            <i class="fas fa-calendar-day"></i> Votes Per Day
+          </label>          <input
+            type="number"
+            id="editVotesPerDay"
+            min="1"
+            max="10"
+            value="${userData.votesPerDay || 1}"
+            placeholder="1-10"
+            aria-label="Votes Per Day"
+            title="Set how many times per day to vote for this author (1-10)"
+            required
+          >
+          <div class="input-feedback votes-per-day-feedback">
+            Maximum of ${userData.votesPerDay || 1} vote(s) per day for this author
           </div>
         </div>
         
@@ -225,13 +245,13 @@ class CurationApp {
     const modal = uiService.createModal(
       `<i class="fas fa-user-edit"></i> Edit Settings for @${username}`,
       modalContent
-    );
-
-    // Setup validation feedback
+    );    // Setup validation feedback
     const delayInput = modal.querySelector('#editVoteDelay');
     const weightInput = modal.querySelector('#editVoteWeight');
+    const votesPerDayInput = modal.querySelector('#editVotesPerDay');
     const delayFeedback = modal.querySelector('.delay-feedback');
     const weightFeedback = modal.querySelector('.weight-feedback');
+    const votesPerDayFeedback = modal.querySelector('.votes-per-day-feedback');
     const optimalToggle = modal.querySelector('#editOptimalTimeToggle');
     
     // Gestisci il toggle per Auto Optimal Time
@@ -270,9 +290,7 @@ class CurationApp {
         delayFeedback.classList.remove('valid');
         delayFeedback.classList.add('invalid', 'show');
       }
-    });
-
-    weightInput.addEventListener('input', (e) => {
+    });    weightInput.addEventListener('input', (e) => {
       const value = e.target.value;
       if (value >= 1 && value <= 100) {
         weightFeedback.textContent = `Votes will be cast at ${value}% strength`;
@@ -284,19 +302,32 @@ class CurationApp {
         weightFeedback.classList.add('invalid', 'show');
       }
     });
+    
+    votesPerDayInput.addEventListener('input', (e) => {
+      const value = e.target.value;
+      if (value >= 1 && value <= 10) {
+        votesPerDayFeedback.textContent = `Maximum of ${value} vote(s) per day for this author`;
+        votesPerDayFeedback.classList.remove('invalid');
+        votesPerDayFeedback.classList.add('valid', 'show');
+      } else {
+        votesPerDayFeedback.textContent = 'Please enter a value between 1 and 10';
+        votesPerDayFeedback.classList.remove('valid');
+        votesPerDayFeedback.classList.add('invalid', 'show');
+      }
+    });
 
     // Handle cancel button
     modal.querySelector('.cancel-btn').addEventListener('click', () => {
       uiService.closeModal(modal);
     });
-    
-    // Handle form submit
+      // Handle form submit
     modal.querySelector('#editUserForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       
       const useOptimalTime = modal.querySelector('#editOptimalTimeToggle').checked;
       const newVoteDelay = useOptimalTime ? 'auto' : parseFloat(delayInput.value);
       const newVoteWeight = parseInt(weightInput.value);
+      const newVotesPerDay = parseInt(modal.querySelector('#editVotesPerDay').value);
 
       if (!useOptimalTime && (newVoteDelay < 0 || newVoteDelay > 1440 || isNaN(newVoteDelay))) {
         return;
@@ -305,11 +336,16 @@ class CurationApp {
       if (newVoteWeight < 1 || newVoteWeight > 100 || isNaN(newVoteWeight)) {
         return;
       }
+      
+      if (newVotesPerDay < 1 || newVotesPerDay > 10 || isNaN(newVotesPerDay)) {
+        return;
+      }
 
       const updatedData = {
         ...this.users.get(username),
         voteDelay: newVoteDelay,
         voteWeight: newVoteWeight,
+        votesPerDay: newVotesPerDay,
         useOptimalTime: useOptimalTime,
         lastUpdated: Date.now()
       };
@@ -493,6 +529,128 @@ class CurationApp {
   }
 
   /**
+   * Controlla se l'utente ha raggiunto il limite giornaliero di voti
+   * @param {string} username - Nome utente
+   * @param {Object} userData - Dati dell'utente
+   * @returns {boolean} - true se è possibile votare ancora oggi
+   */
+  checkDailyVoteLimit(username, userData) {
+    // Imposta valori predefiniti se non esistono
+    if (!userData.votesPerDay) userData.votesPerDay = 1;
+    if (!userData.dailyVotesCount) userData.dailyVotesCount = 0;
+    if (!userData.lastVoteDate) userData.lastVoteDate = null;
+    
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    
+    // Se non c'è mai stato un voto o l'ultimo voto è di un giorno precedente, resetta il contatore
+    if (!userData.lastVoteDate || new Date(userData.lastVoteDate).getTime() < today) {
+      userData.dailyVotesCount = 0;
+      return true;
+    }
+    
+    // Altrimenti controlla se abbiamo raggiunto il limite
+    return userData.dailyVotesCount < userData.votesPerDay;
+  }
+    /**
+   * Aggiorna il contatore dei voti dopo un voto
+   * @param {string} username - Nome utente
+   * @param {Object} userData - Dati dell'utente
+   */
+  updateVoteCounter(username, userData) {
+    const now = new Date();
+    
+    // Incrementa il contatore
+    if (!userData.dailyVotesCount) userData.dailyVotesCount = 0;
+    userData.dailyVotesCount++;
+    
+    // Aggiorna la data dell'ultimo voto
+    userData.lastVoteDate = now.toISOString();
+    
+    // Aggiorna i dati nell'utente
+    this.users.set(username, userData);
+    storageService.saveUsers(this.users);
+    
+    console.log(`Updated vote counter for ${username}: ${userData.dailyVotesCount}/${userData.votesPerDay} votes today`);
+    
+    // Se abbiamo raggiunto il limite, mostra una notifica
+    if (userData.dailyVotesCount >= userData.votesPerDay) {
+      uiService.showStatus(`Daily vote limit reached for @${username} (${userData.votesPerDay} votes)`, 'info');
+    }
+
+    // Aggiorna la visualizzazione dei contatori di voto
+    this.updateVoteCountersDisplay();
+    
+    // Apply animation to the updated counter
+    setTimeout(() => {
+      const userCards = document.querySelectorAll('.user-card');
+      for (const card of userCards) {
+        if (card.querySelector('.user-info strong').textContent.includes(`@${username}`)) {
+          const badge = card.querySelector('.vote-count-badge');
+          if (badge) {
+            badge.classList.add('updated');
+            // Remove the class after animation completes to allow it to animate again
+            setTimeout(() => badge.classList.remove('updated'), 600);
+          }
+          break;
+        }
+      }
+    }, 100);
+  }
+  /**
+   * Aggiorna la visualizzazione dei contatori di voto per tutti gli utenti
+   */
+  updateVoteCountersDisplay() {
+    for (const [username, data] of this.users) {
+      // Use a more reliable selector to find the user card
+      const userCards = document.querySelectorAll('.user-card');
+      let userCardElement = null;
+      
+      for (const card of userCards) {
+        if (card.querySelector('.user-info strong').textContent.includes(`@${username}`)) {
+          userCardElement = card;
+          break;
+        }
+      }
+      
+      if (!userCardElement) continue;
+      
+      const voteCountSpan = userCardElement.querySelector('span i.fa-calendar-day').parentElement;
+      const isLimitReached = (data.dailyVotesCount || 0) >= (data.votesPerDay || 1);
+      
+      if (voteCountSpan) {
+        // Update the vote count with enhanced styling
+        voteCountSpan.className = isLimitReached ? 'vote-limit-reached' : '';
+        voteCountSpan.innerHTML = `
+          <i class="fas fa-calendar-day"></i> Votes: 
+          <span class="vote-count-badge">${data.dailyVotesCount || 0}/${data.votesPerDay || 1}</span> today
+        `;
+        
+        // Update progress bar
+        const progressContainer = userCardElement.querySelector('.votes-progress-container');
+        const progressBar = userCardElement.querySelector('.votes-progress-bar');
+        
+        if (progressBar) {
+          progressBar.style.width = `${Math.min(((data.dailyVotesCount || 0) / (data.votesPerDay || 1)) * 100, 100)}%`;
+          progressBar.className = `votes-progress-bar ${isLimitReached ? 'limit-reached' : ''}`;
+        }
+        
+        // If progress bar doesn't exist, create it
+        if (!progressContainer) {
+          const progressHtml = `
+            <div class="votes-progress-container">
+              <div class="votes-progress-bar ${isLimitReached ? 'limit-reached' : ''}" 
+                   style="width: ${Math.min(((data.dailyVotesCount || 0) / (data.votesPerDay || 1)) * 100, 100)}%">
+              </div>
+            </div>
+          `;
+          voteCountSpan.insertAdjacentHTML('afterend', progressHtml);
+        }
+      }
+    }
+  }
+
+  /**
    * Verifica periodicamente i post degli utenti per votare automaticamente
    */
   async monitorUsers() {
@@ -507,8 +665,16 @@ class CurationApp {
           const now = new Date();
           const minutesSincePost = (now - postDate) / 1000 / 60;
           
+          // Verifica se è già stato raggiunto il limite giornaliero di voti per questo autore
+          const canVoteToday = this.checkDailyVoteLimit(username, data);
+          if (!canVoteToday) {
+            console.log(`Skipping vote for ${username}: daily vote limit reached (${data.votesPerDay} votes/day)`);
+            continue;
+          }
+          
           // Controlla se l'utente usa la modalità automatica
           const isAutoMode = data.useOptimalTime || data.voteDelay === 'auto';
+          let shouldVote = false;
           
           if (isAutoMode) {
             // Se è in modalità auto, ottieni i dati dei votanti e calcola il tempo ottimale
@@ -523,8 +689,7 @@ class CurationApp {
                 // Vota se siamo nella finestra ottimale (tra min e max)
                 if (minutesSincePost >= voteWindow[0] && minutesSincePost <= voteWindow[1]) {
                   console.log(`Voting on post by ${username} with weight ${data.voteWeight}% (Optimal Time: ${optimalTime})`);
-                  // Logica di voto effettiva
-                  // ...
+                  shouldVote = true;
                 }
               }
             } catch (error) {
@@ -534,9 +699,17 @@ class CurationApp {
             // Modalità manuale originale
             if (minutesSincePost >= data.voteDelay && minutesSincePost < data.voteDelay + 1) {
               console.log(`Voting on post by ${username} with weight ${data.voteWeight}%`);
-              // Logica di voto effettiva
-              // ...
+              shouldVote = true;
             }
+          }
+          
+          // Se è il momento di votare, aggiorna il contatore giornaliero
+          if (shouldVote) {
+            // Logica di voto effettiva
+            // ...
+            
+            // Aggiorna il contatore dei voti e la data dell'ultimo voto
+            this.updateVoteCounter(username, data);
           }
         }
       } catch (error) {

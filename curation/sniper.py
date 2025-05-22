@@ -1,28 +1,33 @@
-import json
 import requests
-import logging
 import time
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from collections import defaultdict
 
 from .components.logger_config import logger
-from .components.config import (
-    steem_domain, hive_domain, admin_id, TOKEN, 
-    steem_curator, steem_curator_posting_key, 
-    hive_curator, hive_curator_posting_key,
-    TEST
-)
+from .components.config import steem_domain, hive_domain
 from .components.beem import Blockchain
 from .services.user_service import UserService
+from .services.settings_service import SettingsService
 
 
 class SocialMediaPublisher:
     def __init__(self, app=None):
-        self.beem = Blockchain()
+        self.app = app
+        # Inizializza le impostazioni per i test
+        self.is_test_mode = True
+        # Carica la modalità test dal database se possibile
+        try:
+            self.is_test_mode = SettingsService.is_test_mode(app)
+            # self.post_voters = self.beem.get_post_voters(f"@miftahulrizky/winners-announcement-of-the-steemit-challenge-season-24-week-4-places-of-worship", min_importance=0.1)
+            # logger.debug(f"Post Voters: {self.post_voters}")
+        except:
+            # In caso di errore, usa il valore predefinito
+            self.is_test_mode = True
+            
+        # Inizializza l'istanza di blockchain
+        self.beem = Blockchain(app=self.app)
         self.published_links = {"steem": set(), "hive": set()}
         self.running = True
-        self.app = app
     
     def update_user_data(self):
         """Raccoglie gli utenti per piattaforma usando direttamente il database."""
@@ -66,105 +71,159 @@ class SocialMediaPublisher:
     
     def handle_voting(self, platform, post_link):
         """Gestisce il processo di voto per un post."""
-        # Usa UserService per trovare l'utente associato al post
         user_data = UserService.get_user_for_post(post_link, self.app)
-        
+        admin_ids = SettingsService.get_setting('admin_ids', default='', app=self.app)
+        bot_token = SettingsService.get_setting('bot_token', default='', app=self.app)
+
         if not user_data:
             logger.debug(f"Nessun utente trovato per il post {post_link}")
             return
-        
+
         try:
-            # Controlla se l'utente ha attivato la modalità automatica
+            # Parametri utente e curatore
             use_optimal_time = user_data.get('useOptimalTime', False) or user_data.get('voteDelay') == 'auto'
-            
-            # Recupera il peso del voto dall'utente
             vote_weight = user_data['voteWeight']
-            curator = steem_curator if platform == "steem" else hive_curator
-            curator_key = steem_curator_posting_key if platform == "steem" else hive_curator_posting_key
-            
-            curator_info = self.beem.get_steem_profile_info(curator) if platform == "steem" else self.beem.get_hive_profile_info(curator)
-            last_vote_time = curator_info['result'][0]['last_vote_time']
-            old_voting_power = curator_info['result'][0]['voting_power'] / 100
+            max_votes_per_day = user_data.get('maxVotesPerDay', 3)
+
+            curator_info = self.beem.get_curator_info(platform)
+            curator = curator_info['username']
+            curator_key = curator_info['posting_key']
+
+            # Profilo curatore e autore
+            curator_profile = (
+                self.beem.get_steem_profile_info(curator)
+                if platform == "steem"
+                else self.beem.get_hive_profile_info(curator)
+            )
+            last_vote_time = curator_profile['result'][0]['last_vote_time']
+            old_voting_power = curator_profile['result'][0]['voting_power'] / 100
             voting_power = self.beem.calculate_voting_power(last_vote_time, old_voting_power)
-            
-            author = self.beem.get_steem_author(post_link) if platform == "steem" else self.beem.get_hive_author(post_link)
-            permlink = self.beem.get_steem_permlink(post_link) if platform == "steem" else self.beem.get_hive_permlink(post_link)
-            
-            # Controlla se stiamo utilizzando il tempo ottimale
+
+            author = (
+                self.beem.get_steem_author(post_link)
+                if platform == "steem"
+                else self.beem.get_hive_author(post_link)
+            )
+            permlink = (
+                self.beem.get_steem_permlink(post_link)
+                if platform == "steem"
+                else self.beem.get_hive_permlink(post_link)
+            )
+
+            # Controllo limite voti giornalieri
+            votes_today = self.beem.get_votes_today(curator, author, platform)
+            if votes_today >= max_votes_per_day:
+                msg = (
+                    f"[{platform.upper()}] Voto NON eseguito: raggiunto il limite giornaliero "
+                    f"({max_votes_per_day}) per {author}\n{post_link}"
+                )
+                logger.info(msg)
+                self.send_telegram_message(bot_token, admin_ids, msg)
+                return
+
+            # Calcolo tempo di voto
             if use_optimal_time:
-                # Ottieni i votanti del post e calcola il tempo ottimale di voto
-                voters_data = self.beem.get_post_voters(f"@{author}/{permlink}", min_importance=0.1)
-                optimal_vote_info = self.beem.calculate_optimal_vote_time(voters_data)
-                
-                # Usa il tempo di voto ottimale
-                vote_delay = optimal_vote_info['optimal_time']
-                vote_window = optimal_vote_info['vote_window']
-                vote_explanation = optimal_vote_info['explanation']
-                
-                telegram_message = f"[{platform.upper()}] (VP: {voting_power:.2f}, OPTIMAL: {vote_delay} min)\n{vote_explanation}\n{post_link}"
-            else:
-                # Usa il tempo di ritardo specificato dall'utente
-                vote_delay = user_data['voteDelay']
-                telegram_message = f"[{platform.upper()}] (VP: {voting_power:.2f}, DELAY: {vote_delay} min)\n{post_link}"
-            
-            # Invia messaggio con informazioni sul voto pianificato
-            self.send_telegram_message(TOKEN, admin_id, telegram_message)
-            
-            if voting_power > 89:
-                post = self.beem.get_comment(author=author, permalink=permlink, blockchain=platform)
-                created_time = post['created']
-                target_vote_time = created_time + timedelta(minutes=vote_delay)
-                time_until_vote = target_vote_time - datetime.now(timezone.utc)
-                minutes_until_vote = time_until_vote.total_seconds() / 60
-                
-                if not self.running:
-                    logger.info("Publisher fermato durante l'attesa del voto")
-                    return
-                    
-                if minutes_until_vote > 0:
-                    logger.info(f"Waiting {minutes_until_vote:.1f} minutes before voting...")
-                    self._safe_sleep(minutes_until_vote * 60)
-                
-                if TEST:
-                    logger.info(f"Voting: {author} {permlink} {vote_weight}")
+                previous_posts = self.beem.get_previous_author_posts(author, platform, limit=5)
+                if previous_posts:
+                    all_voters_data = []
+                    for post in previous_posts:
+                        post_permlink = post.get('permlink', '')
+                        if post_permlink:
+                            post_voters = self.beem.get_post_voters(f"@{author}/{post_permlink}", min_importance=0.1)
+                            all_voters_data.extend(post_voters)
+                    optimal_vote_info = self.beem.calculate_optimal_vote_time(all_voters_data)
+                    vote_delay = optimal_vote_info['optimal_time']
+                    vote_explanation = optimal_vote_info['explanation'] + " (basato su post precedenti)"
+                    telegram_message = (
+                        f"[{platform.upper()}] (VP: {voting_power:.2f}, OPTIMAL: {vote_delay} min)\n"
+                        f"{vote_explanation}\n{post_link}"
+                    )
                 else:
-                    if platform == "steem":
-                        self.beem.like_steem_post(voter=steem_curator, voted=author, permlink=permlink, private_posting_key=steem_curator_posting_key, weight=vote_weight)
-                    else:
-                        self.beem.like_hive_post(voter=hive_curator, voted=author, permlink=permlink, private_posting_key=hive_curator_posting_key, weight=vote_weight)
-                self.send_telegram_message(TOKEN, admin_id, "Voted!")
+                    vote_delay = 5
+                    telegram_message = (
+                        f"[{platform.upper()}] (VP: {voting_power:.2f}, DEFAULT: {vote_delay} min)\n"
+                        f"Nessun post precedente trovato\n{post_link}"
+                    )
             else:
-                self.send_telegram_message(TOKEN, admin_id, "Not Voted! Voting power too low.")
+                vote_delay = user_data['voteDelay']
+                telegram_message = (
+                    f"[{platform.upper()}] (VP: {voting_power:.2f}, DELAY: {vote_delay} min)\n{post_link}"
+                )
+
+            self.send_telegram_message(bot_token, admin_ids, telegram_message)
+
+            # Controllo voting power e stato voto
+            if voting_power <= 89:
+                self.send_telegram_message(bot_token, admin_ids, "Not Voted! Voting power too low.")
+                return
+
+            post = self.beem.get_comment(author=author, permalink=permlink, blockchain=platform)
+            created_time = post['created']
+            votes = getattr(post, 'active_votes', [])
+            already_voted = any(v.get('voter') == curator for v in votes)
+            target_vote_time = created_time + timedelta(minutes=vote_delay)
+            minutes_until_vote = (target_vote_time - datetime.now(timezone.utc)).total_seconds() / 60
+
+            if already_voted:
+                self.send_telegram_message(bot_token, admin_ids, f"Already voted for {post_link}")
+                logger.info(f"Already voted for {post_link}")
+                return
+
+            if not self.running:
+                logger.info("Publisher fermato durante l'attesa del voto")
+                return
+
+            if minutes_until_vote > 0:
+                logger.info(f"Waiting {minutes_until_vote:.1f} minutes before voting...")
+                self._safe_sleep(minutes_until_vote * 60)
+
+            if self.is_test_mode:
+                logger.info(f"Voting: {author} {permlink} {vote_weight}")
+            else:
+                if platform == "steem":
+                    self.beem.like_steem_post(
+                        voter=curator, voted=author, permlink=permlink,
+                        private_posting_key=curator_key, weight=vote_weight
+                    )
+                else:
+                    self.beem.like_hive_post(
+                        voter=curator, voted=author, permlink=permlink,
+                        private_posting_key=curator_key, weight=vote_weight
+                    )
+
+            self.send_telegram_message(bot_token, admin_ids, "Voted!")
+
         except Exception as e:
             logger.error(f"Errore durante la gestione del voto per {post_link}: {str(e)}")
-            self.send_telegram_message(TOKEN, admin_id, f"Error during vote: {str(e)}")
+            self.send_telegram_message(bot_token, admin_ids, f"Error during vote: {str(e)}")
 
     def publish_posts(self):
         """Controlla e pubblica nuovi post periodicamente."""
         logger.info("Avvio del publisher dei post")
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            while self.running:
-                try:
-                    platform_users = self.update_user_data()
-                    futures = {
-                        executor.submit(self.process_posts, platform, users): platform 
-                        for platform, users in platform_users.items() if users
-                    }
-                    
-                    for future in as_completed(futures):
-                        try:
-                            future.result()
-                        except Exception as e:
-                            platform = futures[future]
-                            logger.error(f"Errore nell'elaborazione dei post per {platform}: {str(e)}")
-                    
-                    self._safe_sleep(5)  # Attendi tra le iterazioni
-                except Exception as e:
-                    logger.error(f"Errore nel ciclo principale del publisher: {str(e)}")
-                    self._safe_sleep(10)  # Attendi un po' più a lungo in caso di errore
+        with self.app.app_context():
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                while self.running:
+                    try:
+                        platform_users = self.update_user_data()
+                        futures = {
+                            executor.submit(self.process_posts, platform, users): platform 
+                            for platform, users in platform_users.items() if users
+                        }
+                        
+                        for future in as_completed(futures):
+                            try:
+                                future.result()
+                            except Exception as e:
+                                platform = futures[future]
+                                logger.error(f"Errore nell'elaborazione dei post per {platform}: {str(e)}")
+                        
+                        self._safe_sleep(5)  # Attendi tra le iterazioni
+                    except Exception as e:
+                        logger.error(f"Errore nel ciclo principale del publisher: {str(e)}")
+                        self._safe_sleep(10)  # Attendi un po' più a lungo in caso di errore
         
-        logger.info("Publisher dei post fermato")
-
+        logger.info("Publisher dei post fermato")    
+        
     def _safe_sleep(self, seconds):
         """Sleep che può essere interrotto quando self.running diventa False."""
         start_time = time.time()
@@ -177,10 +236,28 @@ class SocialMediaPublisher:
         self.running = False
 
     def send_telegram_message(self, bot_token, chat_id, message):
-        try:
-            url = f"https://api.telegram.org/bot{bot_token}/sendMessage?chat_id={chat_id}&text={message}"
-            response = requests.get(url)
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error telegram server {e}")
+        """
+        Invia un messaggio Telegram a uno o più utenti.
+        
+        Args:
+            bot_token (str): Token del bot Telegram
+            chat_id (str): ID chat o lista di ID separati da virgola
+            message (str): Messaggio da inviare
+        """
+        if not bot_token or not chat_id:
+            logger.warning("Token del bot o chat_id mancanti, impossibile inviare messaggio Telegram")
             return False
+            
+        # Supporto per più admin ID
+        chat_ids = [id.strip() for id in chat_id.split(',') if id.strip()]
+        
+        results = []
+        for id in chat_ids:
+            try:
+                url = f"https://api.telegram.org/bot{bot_token}/sendMessage?chat_id={id}&text={message}"
+                response = requests.get(url)
+                results.append(response.json())
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Errore comunicazione con server Telegram per chat_id {id}: {e}")
+        
+        return results

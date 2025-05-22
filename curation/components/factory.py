@@ -2,9 +2,10 @@ from flask import Flask
 import os
 import threading
 from curation.components.db import db
-from curation.components.config import TEST
+from curation.components.config import TEST, update_config_from_db
 from apscheduler.schedulers.background import BackgroundScheduler
 from curation.components.logger_config import logger
+from curation.services.settings_service import SettingsService
 
 # Singleton per gestire lo stato globale dell'applicazione
 class AppState:
@@ -86,16 +87,23 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # Inizializza le estensioni
-    db.init_app(app)
-
-    # Inizializza il database
+    db.init_app(app)    # Inizializza il database
     with app.app_context():
         try:
             logger.info("Creazione delle tabelle del database...")
             db.create_all()
             logger.info("Tabelle create con successo")
+            
+            # Inizializza le impostazioni predefinite
+            logger.info("Inizializzazione delle impostazioni predefinite...")
+            SettingsService.initialize_default_settings()
+            
+            # Aggiorna le variabili di configurazione con i valori dal database
+            update_config_from_db(SettingsService)
+            logger.info("Configurazione aggiornata dal database")
+            
         except Exception as e:
-            logger.error(f"Errore nella creazione delle tabelle: {e}")
+            logger.error(f"Errore nella creazione delle tabelle o inizializzazione: {e}")
             raise
     
     # Registra blueprints, gestori errori, ecc qui se necessario
@@ -104,6 +112,10 @@ def create_app():
 
 def init_services(app):
     """Inizializza tutti i servizi dell'applicazione"""
+    # Aggiorna le configurazioni da database nel contesto dell'applicazione
+    with app.app_context():
+        update_config_from_db(SettingsService)
+    
     # Setup dello scheduler
     setup_scheduler(app)
     

@@ -1,10 +1,11 @@
 import asyncio
+from flask import current_app
 from ..components.logger_config import logger
 from ..components.beem import Blockchain
 from ..components.config import steem_curator as CURATOR
 
 # Istanza globale del BlockchainConnector
-blockchain_connector = Blockchain()
+blockchain_connector = Blockchain(app=current_app)
 
 async def calculate_vote_value(vote_percent, effective_vests=None, voting_power=10000):
     """Calculate vote value based on blockchain parameters, similar to the JS implementation."""
