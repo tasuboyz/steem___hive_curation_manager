@@ -688,6 +688,13 @@ class Blockchain:
             logger.info(f"Utilizzando dati in cache per {post_url}")
             return self._voters_cache[cache_key]
         
+        # Ottieni il nome del curatore per la piattaforma corretta
+        if 'peakd.com' in post_url or 'hive.blog' in post_url:
+            curator_info = self.get_curator_info('hive')
+        else:
+            curator_info = self.get_curator_info('steem')
+        curator_username = (curator_info.get('username') or '').lower()
+        
         try:
             # Ottimizzazione: limita il numero di richieste parallele
             start_time = time.time()
@@ -735,6 +742,9 @@ class Blockchain:
             for vote_data in active_votes:
                 try:
                     voter_name = vote_data['voter']
+                    # Escludi il curatore stesso
+                    if voter_name.lower() == curator_username:
+                        continue
                     processed_voters += 1
                     
                     # Prima prova a ottenere rshares direttamente dal voto (più veloce)
