@@ -671,7 +671,7 @@ class Blockchain:
         except Exception as e:
             logger.warning(f"Errore nel salvataggio della cache dei votanti: {e}")
 
-    def get_post_voters(self, post_url, min_importance=0.0, use_cache=True):
+    def get_post_voters(self, post_url, min_importance=0.0, use_cache=False):
         """Get the voters of a post sorted by importance (vesting shares or rshares)
         
         Args:
@@ -860,7 +860,7 @@ class Blockchain:
         if self._voters_cache:
             self._save_cache()
 
-    def calculate_optimal_vote_time(self, voters_data, buffer_minutes=0.5):
+    def calculate_optimal_vote_time(self, voters_data, buffer_minutes=0.1):
         """Calcola il tempo ottimale per votare in base ai votanti importanti
         
         Args:
@@ -869,63 +869,45 @@ class Blockchain:
             
         Returns:
             dict: Dizionario con 'optimal_time' (in minuti) e 'explanation'
-        """
+        """        
         if not voters_data:
             return {
-                'optimal_time': 5,  # Default se non ci sono dati
+                'optimal_time': 5,
                 'explanation': 'Nessun dato sui votanti disponibile, usando il tempo predefinito di 5 minuti',
-                'vote_window': (4.5, 5.5)  # Finestra di voto predefinita
+                'vote_window': (4.8, 5.2)
             }
-        
-        # Ordina i votanti per importanza (decrescente)
         important_voters = sorted(voters_data, key=lambda x: x.get('importance', 0), reverse=True)
-        
-        # Prendi i 3 votanti più importanti, se disponibili
         top_voters = important_voters[:min(3, len(important_voters))]
-        
-        # Calcola l'importanza totale di questi votanti
         total_importance = sum(v.get('importance', 0) for v in top_voters)
-        
         if total_importance <= 0:
             return {
-                'optimal_time': 5,  # Default in caso di importanza zero
+                'optimal_time': 5,
                 'explanation': 'Importanza dei votanti troppo bassa, usando il tempo predefinito di 5 minuti',
-                'vote_window': (4.5, 5.5)
+                'vote_window': (4.8, 5.2)
             }
-        
-        # Calcola il tempo medio ponderato di voto in base all'importanza
-        weighted_vote_time = 0
-        for voter in top_voters:
-            importance = voter.get('importance', 0)
-            delay_minutes = voter.get('vote_delay_minutes', 30)  # Default a 30 minuti se non specificato
-            weight = importance / total_importance
-            weighted_vote_time += delay_minutes * weight
-          # Trova il votante più importante e il suo tempo di voto
-        most_important_voter = top_voters[0]
-        most_important_time = most_important_voter.get('vote_delay_minutes', 30)
-        
         # Trova il votante importante che vota più presto
         earliest_important_voter = min(top_voters, key=lambda x: x.get('vote_delay_minutes', 30))
         earliest_vote_time = earliest_important_voter.get('vote_delay_minutes', 30)
-        
-        # Calcola il tempo di voto ottimale - leggermente prima del votante importante più veloce
-        optimal_time = max(0.5, earliest_vote_time - buffer_minutes)
-        
-        # Genera la spiegazione appropriata
-        if earliest_important_voter['voter'] == most_important_voter['voter']:
-            explanation = f"Votare {buffer_minutes} minuti prima del votante più importante (@{most_important_voter.get('voter', 'sconosciuto')}) che vota dopo {most_important_time:.1f} minuti"
+        # Se il primo votante importante vota troppo presto, cerca il prossimo che vota dopo almeno 3 minuti
+        min_delay = 3.0
+        if earliest_vote_time <= 1.5:
+            # Cerca tra tutti i votanti importanti (non solo i primi 3)
+            later_voters = [v for v in important_voters if v.get('vote_delay_minutes', 0) >= min_delay]
+            if later_voters:
+                next_voter = min(later_voters, key=lambda x: x.get('vote_delay_minutes', 30))
+                optimal_time = max(1.0, next_voter.get('vote_delay_minutes', 30) - buffer_minutes)
+                explanation = f"Il primo votante importante (@{earliest_important_voter.get('voter','sconosciuto')}) vota troppo presto. Votare {buffer_minutes} minuti prima del prossimo votante importante (@{next_voter.get('voter','sconosciuto')}) che vota dopo {next_voter.get('vote_delay_minutes', 30):.1f} minuti"
+            else:
+                optimal_time = 1.0
+                explanation = f"Tutti i votanti importanti votano troppo presto. Votare dopo 1 minuto (minimo consentito)"
         else:
+            optimal_time = max(1.0, earliest_vote_time - buffer_minutes)
             explanation = f"Votare {buffer_minutes} minuti prima del primo votante importante (@{earliest_important_voter.get('voter', 'sconosciuto')}) che vota dopo {earliest_vote_time:.1f} minuti"
-        
-        # Finestra stretta per massimizzare la precisione
-        vote_window = (optimal_time - 0.2, optimal_time + 0.2)
-        
-        # Evita tempi di voto troppo precoci
-        if optimal_time < 0.5:
-            optimal_time = 0.5
-            explanation += " (limitato a un minimo di 0.5 minuti per evitare vote spamming)"
-            vote_window = (0.5, 1.0)
-        
+        vote_window = (optimal_time - 0.1, optimal_time + 0.1)
+        if optimal_time < 1.0:
+            optimal_time = 1.0
+            explanation += " (limitato a un minimo di 1.0 minuti per rispettare le regole della blockchain)"
+            vote_window = (1.0, 1.2)
         return {
             'optimal_time': round(optimal_time, 1),
             'explanation': explanation,
