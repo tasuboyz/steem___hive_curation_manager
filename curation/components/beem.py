@@ -671,6 +671,24 @@ class Blockchain:
         except Exception as e:
             logger.warning(f"Errore nel salvataggio della cache dei votanti: {e}")
 
+    def get_platform_and_instance(self, post_url):
+        """
+        Determina la piattaforma ('steem' o 'hive') e restituisce l'istanza blockchain corretta.
+        """
+        if 'peakd.com' in post_url or 'hive.blog' in post_url:
+            platform = 'hive'
+            for node_url in self.node_urls.get('hive', []):
+                if self.ping_server(node_url):
+                    from beem import Hive
+                    return platform, Hive(node=node_url)
+        else:
+            platform = 'steem'
+            for node_url in self.node_urls.get('steem', []):
+                if self.ping_server(node_url):
+                    from beem import Steem
+                    return platform, Steem(node=node_url)
+        raise Exception("No available node for platform")
+
     def get_post_voters(self, post_url, min_importance=0.0, use_cache=True):
         """Get the voters of a post sorted by importance (vesting shares or rshares)
         
@@ -705,7 +723,8 @@ class Blockchain:
             max_total_voters = 30  # Limite totale di votanti da considerare
             
             # Usa un timeout più breve per evitare blocchi lunghi
-            comment = Comment(post_url, blockchain_instance=self.blockchain)
+            platform, blockchain_instance = self.get_platform_and_instance(post_url)
+            comment = Comment(post_url, blockchain_instance=blockchain_instance)
             # Ottiene i dati completi del post
             comment_data = comment.json()
             
@@ -772,7 +791,7 @@ class Blockchain:
                             # Per votanti top (importanti), vale la pena cercare il tempo preciso
                             if processed_voters <= max_detailed_voters:
                                 try:
-                                    vote = Vote(voter_name, post_url, blockchain_instance=self.blockchain)
+                                    vote = Vote(voter_name, post_url, blockchain_instance=blockchain_instance)
                                     vote_time = vote.time
                                     if vote_time.tzinfo is None:
                                         vote_time = vote_time.replace(tzinfo=timezone.utc)
@@ -803,7 +822,7 @@ class Blockchain:
                     if processed_voters <= max_detailed_voters or vote_rshares >= 1e9:  # 1B rshares come soglia
                         try:
                             # Cache locale temporanea per account (durante questa esecuzione)
-                            voter_account = Account(voter_name, blockchain_instance=self.blockchain)
+                            voter_account = Account(voter_name, blockchain_instance=blockchain_instance)
                             vests = float(voter_account['vesting_shares'].amount) + float(voter_account['received_vesting_shares'].amount) - float(voter_account['delegated_vesting_shares'].amount)
                             importance = max(importance, vests / 1e6)  # Usa il valore maggiore tra rshares e vests
                             reputation = voter_account.get_reputation()
