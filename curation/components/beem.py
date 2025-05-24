@@ -879,7 +879,7 @@ class Blockchain:
         if self._voters_cache:
             self._save_cache()
 
-    def calculate_optimal_vote_time(self, voters_data, buffer_minutes=0.5):
+    def calculate_optimal_vote_time(self, voters_data, buffer_minutes=0.2):
         """Calcola il tempo ottimale per votare in base ai votanti importanti
         
         Args:
