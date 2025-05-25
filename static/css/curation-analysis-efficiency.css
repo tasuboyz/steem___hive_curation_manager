@@ -1,0 +1,68 @@
+/* Efficiency Styling for Curation Analysis */
+
+/* Color indicators for efficiency values in both summary and table */
+.excellent,
+.stat-value.excellent,
+.efficiency-badge.excellent {
+  color: #00c853 !important;
+  font-weight: bold;
+}
+
+.good,
+.stat-value.good,
+.efficiency-badge.good {
+  color: #64dd17 !important;
+  font-weight: bold;
+}
+
+.average,
+.stat-value.average,
+.efficiency-badge.average {
+  color: #ffd600 !important;
+  font-weight: bold;
+}
+
+.poor,
+.stat-value.poor,
+.efficiency-badge.poor {
+  color: #ff6d00 !important;
+  font-weight: bold;
+}
+
+/* Improved tooltip styling */
+[title] {
+  position: relative;
+  cursor: help;
+}
+
+/* Debug information section */
+.debug-info {
+  margin-top: 1rem;
+  padding: 0.5rem;
+  background: rgba(0,0,0,0.05);
+  border-left: 3px solid var(--primary-color);
+  font-family: monospace;
+  font-size: 0.8rem;
+  display: none; /* Hidden by default */
+}
+
+/* Add debug toggle button */
+.debug-toggle {
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-decoration: underline;
+  display: inline-block;
+}
+
+/* Add animation for efficiency values to draw attention */
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.stat-value#avg-efficiency {
+  animation: pulse 1.5s ease-in-out 1;
+}
