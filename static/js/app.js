@@ -8,6 +8,9 @@ import apiService from './modules/api.js';
 import blockchainService from './modules/blockchain.js';
 import uiService from './modules/ui.js';
 import storageService from './modules/storage.js';
+import curationAnalysisService from './modules/curation-analysis.js';
+import tabManager from './modules/tab-manager.js';
+import walletService from './modules/wallet.js';
 
 /**
  * Classe principale dell'applicazione Curation Manager
@@ -16,14 +19,20 @@ class CurationApp {
   constructor() {
     this.currentPlatform = 'steem';
     this.users = new Map();
-    
-    // Configura gli event listeners quando il DOM è caricato
+      // Configura gli event listeners quando il DOM è caricato
     document.addEventListener('DOMContentLoaded', () => {
       this.setupEventListeners();
       
       // Carica gli utenti salvati e il tema
       this.loadSavedUsers();
       this.initializeTheme();
+      
+      // Initialize tab manager
+      tabManager.initialize();
+      tabManager.loadLastActiveTab();
+      
+      // Initialize curation analysis
+      curationAnalysisService.initialize();
     });
   }
 
@@ -37,8 +46,10 @@ class CurationApp {
     document.getElementById('themeToggle').addEventListener('click', () => this.toggleTheme());
     document.getElementById('exportDataBtn').addEventListener('click', () => this.exportData());
     document.getElementById('importDataBtn').addEventListener('click', () => document.getElementById('importInput').click());
-    document.getElementById('importInput').addEventListener('change', (e) => this.importData(e));
-    document.getElementById('logDataBtn').addEventListener('click', () => this.logData());
+    document.getElementById('importInput').addEventListener('change', (e) => this.importData(e));    document.getElementById('logDataBtn').addEventListener('click', () => this.logData());
+    
+    // Event listener per il calcolo della curation analysis
+    document.getElementById('calculate-curation-btn').addEventListener('click', () => this.calculateCurationAnalysis());
     
     // Nuovo event listener per il toggle dell'optimal time
     document.getElementById('optimalTimeToggle').addEventListener('change', (e) => {
@@ -93,6 +104,15 @@ class CurationApp {
     this.currentPlatform = platform;
     document.getElementById('steemBtn').classList.toggle('active', platform === 'steem');
     document.getElementById('hiveBtn').classList.toggle('active', platform === 'hive');
+    
+    // Update blockchain service platform
+    blockchainService.setCurrentPlatform(platform);
+    
+    // Update any wallet balances if available
+    if (walletService.currentUser) {
+      walletService.updateBalances();
+    }
+    
     this.renderUsersList();
   }
 
@@ -833,6 +853,29 @@ class CurationApp {
     console.log(JSON.stringify(data, null, 2));
     
     uiService.showStatus('Data logged to console!', 'info');
+  }
+
+  /**
+   * Calculate curation analysis for the specified user
+   */
+  async calculateCurationAnalysis() {
+    const usernameInput = document.getElementById('curator-username');
+    const daysSelect = document.getElementById('analysis-days');
+    
+    const username = usernameInput.value.trim();
+    const days = parseInt(daysSelect.value);
+    
+    if (!username) {
+      uiService.showStatus('Please enter a username to analyze', 'error');
+      return;
+    }
+      try {
+      // Use the curation analysis service
+      await curationAnalysisService.handleCalculateClick();
+    } catch (error) {
+      console.error('Error in curation analysis:', error);
+      uiService.showStatus('Failed to calculate curation analysis: ' + error.message, 'error');
+    }
   }
 }
 

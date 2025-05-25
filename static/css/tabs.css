@@ -1,0 +1,139 @@
+/* Tab Navigation Styles */
+.tab-navigation {
+  display: flex;
+  background: var(--card-bg);
+  border-radius: 12px 12px 0 0;
+  padding: 0;
+  margin-bottom: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.tab-button {
+  flex: 1;
+  padding: 16px 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  position: relative;
+  border-bottom: 3px solid transparent;
+}
+
+.tab-button:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.tab-button.active {
+  background: var(--primary-color);
+  color: white;
+  border-bottom-color: var(--accent-color);
+  box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
+}
+
+.tab-button.active:hover {
+  background: var(--primary-hover);
+  transform: translateY(0);
+}
+
+.tab-button i {
+  font-size: 18px;
+}
+
+/* Tab Content Styles */
+.tab-content {
+  display: none;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .tab-navigation {
+    flex-direction: column;
+    border-radius: 12px;
+    margin-bottom: 16px;
+  }
+  
+  .tab-button {
+    border-bottom: 1px solid var(--border-color);
+    border-radius: 0;
+  }
+  
+  .tab-button:last-child {
+    border-bottom: none;
+  }
+  
+  .tab-button.active {
+    border-bottom-color: var(--accent-color);
+  }
+}
+
+/* Dark Theme Support */
+body.dark-theme .tab-navigation {
+  background: var(--card-bg-dark);
+  border-bottom-color: var(--border-color-dark);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+body.dark-theme .tab-button {
+  color: var(--text-secondary-dark);
+}
+
+body.dark-theme .tab-button:hover {
+  background: var(--hover-bg-dark);
+  color: var(--text-primary-dark);
+}
+
+body.dark-theme .tab-button.active {
+  background: var(--primary-color);
+  color: white;
+}
+
+/* Custom Properties for Tab Theme */
+:root {
+  --primary-rgb: 74, 144, 226;
+  --hover-bg: rgba(74, 144, 226, 0.1);
+  --hover-bg-dark: rgba(74, 144, 226, 0.2);
+  --border-color-dark: #374151;
+  --text-secondary-dark: #9ca3af;
+  --text-primary-dark: #f9fafb;
+  --card-bg-dark: #1f2937;
+}
+
+/* Tab Content Spacing */
+.tab-content .card:first-child {
+  margin-top: 0;
+}
+
+.tab-content .card {
+  margin-bottom: 24px;
+}
+
+.tab-content .card:last-child {
+  margin-bottom: 0;
+}

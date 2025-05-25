@@ -230,14 +230,86 @@ def update_bot_info():
     # Aggiorna gli admin IDs se forniti
     if 'admin_ids' in data:
         success = success and SettingsService.set_setting('admin_ids', data['admin_ids'])
-    
-    # Aggiorna il token del bot se fornito
+      # Aggiorna il token del bot se fornito
     if 'bot_token' in data and data['bot_token']:
         success = success and SettingsService.set_setting('bot_token', data['bot_token'])
     
     if success:
         return jsonify({'message': 'Bot information updated successfully'})
     return jsonify({'error': 'Error updating bot information'}), 500
+
+@app.route('/api/curation_analysis', methods=['POST'])
+def curation_analysis():
+    """Analyzes curation efficiency for a given user"""
+    data = request.json
+    if not data or 'username' not in data:
+        return jsonify({'error': 'Missing username parameter'}), 400
+    
+    username = data['username'].lower().strip()
+    days = data.get('days', 7)
+    platform = data.get('platform', 'steem')
+    
+    if not username:
+        return jsonify({'error': 'Invalid username'}), 400
+    
+    if platform not in ['steem', 'hive']:
+        return jsonify({'error': 'Invalid platform. Must be steem or hive'}), 400
+    
+    try:
+        # Initialize the correct blockchain instance
+        for node_url in blockchain_connector.node_urls.get(platform):
+            if blockchain_connector.ping_server(node_url):
+                if platform == 'steem':
+                    from beem import Steem
+                    blockchain_connector.blockchain = Steem(node=node_url)
+                else:
+                    from beem import Hive
+                    blockchain_connector.blockchain = Hive(node=node_url)
+                break
+        
+        if blockchain_connector.blockchain is None:
+            return jsonify({'error': f'No available {platform} node'}), 503
+        
+        # Get curation rewards for the user
+        curation_data = blockchain_connector.get_curation_rewards(username, days)
+        
+        if not curation_data:
+            return jsonify({
+                'success': False,
+                'message': f'No curation rewards found for @{username} in the last {days} days'
+            })
+        
+        # Calculate summary statistics
+        total_votes = len(curation_data)
+        total_rewards = sum(reward['reward_sp'] for reward in curation_data)
+        
+        if total_votes > 0:
+            avg_efficiency = sum(reward['efficiency'] for reward in curation_data) / total_votes
+            
+            # Simple APR calculation
+            daily_rewards = total_rewards / days
+            annual_rewards = daily_rewards * 365
+            # Estimate SP (this would ideally come from user's actual SP)
+            estimated_sp = 1000  # This should be fetched from the blockchain
+            apr = (annual_rewards / estimated_sp) * 100 if estimated_sp > 0 else 0
+        else:
+            avg_efficiency = 0
+            apr = 0
+        
+        return jsonify({
+            'success': True,
+            'summary': {
+                'totalVotes': total_votes,
+                'totalRewards': f"{total_rewards:.3f}",
+                'avgEfficiency': f"{avg_efficiency:.1f}",
+                'apr': f"{apr:.2f}"
+            },
+            'detailedResults': curation_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error analyzing curation for {username}: {e}")
+        return jsonify({'error': str(e)}), 500
 
 def handle_shutdown(signal, frame):
     """Gestisce l'arresto pulito dell'applicazione"""

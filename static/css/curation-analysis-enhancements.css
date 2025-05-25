@@ -1,0 +1,173 @@
+/* Stili aggiuntivi per la visualizzazione dell'analisi di curation */
+
+/* Stile per il badge della percentuale di voto */
+.percent-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 600;
+  background-color: var(--primary-color);
+  color: white;
+  transition: all 0.2s ease-in-out;
+}
+
+/* Stile per percentuali di voto che non sono al 100% */
+.percent-badge.partial {
+  background-color: var(--secondary-color);
+  position: relative;
+}
+
+/* Effetto hover per il badge della percentuale */
+.percent-badge:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+}
+
+/* Aggiungi un piccolo indicatore per voti parziali */
+.percent-badge.partial::after {
+  content: "•";
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  color: var(--warning-color);
+  font-size: 1.4em;
+}
+
+/* Stili per i badge dell'efficienza */
+.efficiency-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-weight: 600;
+  color: white;
+  transition: all 0.2s ease-in-out;
+}
+
+/* Colori per diversi livelli di efficienza */
+.efficiency-badge.excellent {
+  background: linear-gradient(135deg, #4CAF50, #8BC34A);
+}
+
+.efficiency-badge.good {
+  background: linear-gradient(135deg, #8BC34A, #CDDC39);
+}
+
+.efficiency-badge.medium {
+  background: linear-gradient(135deg, #FFC107, #FF9800);
+}
+
+.efficiency-badge.low {
+  background: linear-gradient(135deg, #FF5722, #F44336);
+}
+
+.efficiency-badge:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.2);
+}
+
+/* Animazione al caricamento per attirare l'attenzione sulle efficienze molto alte */
+@keyframes pulse-highlight {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+.efficiency-badge.excellent {
+  animation: pulse-highlight 1s ease;
+}
+
+/* Expected reward calculation styles */
+.calculating {
+  color: #6c757d;
+  font-style: italic;
+  font-size: 0.9em;
+}
+
+.expected-reward {
+  color: #28a745;
+  font-weight: 600;
+  cursor: help;
+}
+
+.calc-error {
+  color: #dc3545;
+  font-style: italic;
+  cursor: help;
+}
+
+/* Enhanced efficiency container */
+.efficiency-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Animation for calculating state */
+.calculating::after {
+  content: "...";
+  animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+  0%, 20% {
+    color: rgba(0,0,0,0);
+    text-shadow: 
+      .25em 0 0 rgba(0,0,0,0),
+      .5em 0 0 rgba(0,0,0,0);
+  }
+  40% {
+    color: #6c757d;
+    text-shadow: 
+      .25em 0 0 rgba(0,0,0,0),
+      .5em 0 0 rgba(0,0,0,0);
+  }
+  60% {
+    text-shadow: 
+      .25em 0 0 #6c757d,
+      .5em 0 0 rgba(0,0,0,0);
+  }
+  80%, 100% {
+    text-shadow: 
+      .25em 0 0 #6c757d,
+      .5em 0 0 #6c757d;
+  }
+}
+
+/* Export controls container */
+.export-controls {
+  display: flex;
+  gap: 12px;
+  margin: 20px 0;
+  justify-content: flex-end;
+}
+
+/* Export button style */
+.export-btn {
+  background-color: var(--secondary-color);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.export-btn:hover {
+  background-color: var(--primary-color);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.export-btn:active {
+  transform: translateY(0);
+}
+
+.export-btn i {
+  font-size: 1.1em;
+}

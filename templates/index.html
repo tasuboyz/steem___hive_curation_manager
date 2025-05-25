@@ -6,12 +6,12 @@
   <link rel="icon" href="{{ url_for('static', filename='images/favicon.ico') }}" type="image/x-icon">
   <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.ico') }}" type="image/x-icon">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/header.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">  <link rel="stylesheet" href="{{ url_for('static', filename='css/header.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-counter.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-counter-dark.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-input-enhancements.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-input-decorations.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-counter-dark.css') }}">  <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-input-enhancements.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-input-decorations.css') }}">  <link rel="stylesheet" href="{{ url_for('static', filename='css/curation-analysis.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/curation-analysis-enhancements.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tabs.css') }}">
 </head>
 <body>
   <div class="container">
@@ -45,71 +45,197 @@
           <input type="file" id="importInput" accept=".json" style="display: none;">
         </div>
       </div>
-    </header>
+    </header>    <main>      <!-- Tab Navigation -->
+      <div class="tab-navigation">
+        <button class="tab-button active" data-tab="curation-tab">
+          <i class="fas fa-eye"></i> Curation
+        </button>
+        <button class="tab-button" data-tab="analysis-tab">
+          <i class="fas fa-chart-line"></i> Analysis
+        </button>
+      </div>
 
-    <main>
-      <section class="add-user-section card">
-        <div class="section-header">
-          <i class="fas fa-user-plus"></i>
-          <h2>Add User to Watch</h2>
-        </div>
-        <form id="addUserForm">
-          <div class="input-group">
-            <i class="fas fa-at"></i>
-            <input type="text" id="username" placeholder="Enter username" required>
+      <!-- Curation Tab -->
+      <div id="curation-tab" class="tab-content active">
+        <section class="add-user-section card">
+          <div class="section-header">
+            <i class="fas fa-user-plus"></i>
+            <h2>Add User to Watch</h2>
           </div>
-          <div class="vote-settings">
-            <div class="setting">
-              <label for="voteDelay">
-                <i class="fas fa-clock"></i> Vote Delay (minutes):
-              </label>
-              <div class="delay-input-container">
-                <input type="number" id="voteDelay" min="0" step="0.1" value="5">
-                <div class="toggle-container">
-                  <label class="toggle-switch">
-                    <input type="checkbox" id="optimalTimeToggle">
-                    <span class="toggle-slider"></span>
-                  </label>
-                  <span class="toggle-label">Auto Optimal</span>
+          <form id="addUserForm">
+            <div class="input-group">
+              <i class="fas fa-at"></i>
+              <input type="text" id="username" placeholder="Enter username" required>
+            </div>
+            <div class="vote-settings">
+              <div class="setting">
+                <label for="voteDelay">
+                  <i class="fas fa-clock"></i> Vote Delay (minutes):
+                </label>
+                <div class="delay-input-container">
+                  <input type="number" id="voteDelay" min="0" step="0.1" value="5">
+                  <div class="toggle-container">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="optimalTimeToggle">
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label">Auto Optimal</span>
+                  </div>
+                </div>
+              </div>            
+              <div class="setting">
+                <label for="voteWeight">
+                  <i class="fas fa-percentage"></i> Vote Weight:
+                </label>
+                <input type="number" id="voteWeight" min="1" max="100" value="100">
+              </div>            
+              <div class="setting votes-per-day-setting">
+                <label for="votesPerDay">
+                  <i class="fas fa-calendar-day"></i> Votes Per Day:
+                </label>
+                <input type="number" id="votesPerDay" min="1" max="10" value="1" placeholder="1-10" aria-label="Votes Per Day" title="Set how many times per day to vote for this author (1-10)">
+                <div class="votes-per-day-feedback">
+                  Maximum number of votes per day for this author
                 </div>
               </div>
-            </div>            <div class="setting">
-              <label for="voteWeight">
-                <i class="fas fa-percentage"></i> Vote Weight:
-              </label>
-              <input type="number" id="voteWeight" min="1" max="100" value="100">
-            </div>            <div class="setting votes-per-day-setting">
-              <label for="votesPerDay">
-                <i class="fas fa-calendar-day"></i> Votes Per Day:
-              </label>
-              <input type="number" id="votesPerDay" min="1" max="10" value="1" placeholder="1-10" aria-label="Votes Per Day" title="Set how many times per day to vote for this author (1-10)">
-              <div class="votes-per-day-feedback">
-                Maximum number of votes per day for this author
+            </div>
+            <button type="submit" class="primary-button">
+              <i class="fas fa-plus-circle"></i> Add User
+            </button>
+          </form>
+        </section>
+        
+        <section class="users-list-section card">
+          <div class="section-header">
+            <i class="fas fa-users"></i>
+            <h2>Watched Users</h2>
+          </div>
+          <div class="users-list" id="usersList">
+            <!-- Users will be added here dynamically -->
+          </div>
+        </section>
+      </div>
+
+      <!-- Analysis Tab -->
+      <div id="analysis-tab" class="tab-content">
+        <section class="curation-analysis-section card">
+        <div class="section-header">
+          <i class="fas fa-chart-line"></i>
+          <h2>Curation Analysis</h2>
+        </div>
+        <div class="curation-analysis-content">
+          <p class="info-text">
+            <i class="fas fa-info-circle"></i>
+            Analyze curation rewards and calculate estimated APR based on voting history.
+          </p>
+          
+          <div class="curation-controls">
+            <div class="input-group">
+              <i class="fas fa-at"></i>
+              <input type="text" id="curator-username" placeholder="Enter username to analyze" />
+            </div>
+            
+            <div class="analysis-settings">
+              <div class="setting">
+                <label for="analysis-days">
+                  <i class="fas fa-calendar-alt"></i> Time period:
+                </label>
+                <select id="analysis-days">
+                  <option value="7">Last 7 days</option>
+                  <option value="14">Last 14 days</option>
+                  <option value="30">Last 30 days</option>
+                </select>
               </div>
             </div>
+            
+            <button type="button" id="calculate-curation-btn" class="primary-button">
+              <i class="fas fa-calculator"></i> Calculate Efficiency
+            </button>
           </div>
-          <button type="submit" class="primary-button">
-            <i class="fas fa-plus-circle"></i> Add User
-          </button>
-        </form>
-      </section>
-
-      <section class="users-list-section card">
-        <div class="section-header">
-          <i class="fas fa-users"></i>
-          <h2>Watched Users</h2>
-        </div>
-        <div class="users-list" id="usersList">
-          <!-- Users will be added here dynamically -->
-        </div>
-      </section>
+          
+          <div id="curation-status" class="status-message hidden"></div>
+          
+          <div id="curation-results" class="curation-results hidden">
+            <div class="curation-summary">
+              <h3>Summary</h3>
+              <div class="stats-grid">
+                <div class="stat-item">
+                  <div class="stat-icon">
+                    <i class="fas fa-vote-yea"></i>
+                  </div>
+                  <div class="stat-content">
+                    <div class="stat-label">Total Votes</div>
+                    <div class="stat-value" id="total-votes">0</div>
+                  </div>
+                </div>
+                <div class="stat-item">
+                  <div class="stat-icon">
+                    <i class="fas fa-coins"></i>
+                  </div>
+                  <div class="stat-content">
+                    <div class="stat-label">Total Rewards</div>
+                    <div class="stat-value" id="total-rewards">0 SP</div>
+                  </div>
+                </div>
+                <div class="stat-item">
+                  <div class="stat-icon">
+                    <i class="fas fa-chart-line"></i>
+                  </div>
+                  <div class="stat-content">
+                    <div class="stat-label">Avg Efficiency</div>
+                    <div class="stat-value" id="avg-efficiency">0%</div>
+                  </div>
+                </div>
+                <div class="stat-item">
+                  <div class="stat-icon">
+                    <i class="fas fa-percent"></i>
+                  </div>
+                  <div class="stat-content">
+                    <div class="stat-label">Est. APR</div>
+                    <div class="stat-value" id="curation-apr">0%</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="curation-details">
+              <h3>Detailed Results</h3>
+              <div class="sort-controls">
+                <label for="sort-curation">Sort by:</label>
+                <select id="sort-curation">
+                  <option value="efficiency-desc">Efficiency (high to low)</option>
+                  <option value="efficiency-asc">Efficiency (low to high)</option>
+                  <option value="reward-desc">Reward (high to low)</option>
+                  <option value="reward-asc">Reward (low to high)</option>
+                  <option value="age-desc">Vote Age (newest first)</option>
+                  <option value="age-asc">Vote Age (oldest first)</option>
+                </select>
+              </div>
+              <div class="table-container">
+                <table class="curation-table">
+                  <thead>
+                    <tr>
+                      <th>Post</th>
+                      <th>Vote Time</th>
+                      <th>Vote %</th>
+                      <th>Reward</th>
+                      <th>Expected</th>
+                      <th>Efficiency</th>
+                    </tr>
+                  </thead>
+                  <tbody id="curation-results-body">
+                    <!-- Results will be populated here -->
+                  </tbody>
+                </table>
+              </div>
+            </div>          </div>
+        </section>
+      </div>
     </main>
   </div>
-
   <!-- Script delle librerie blockchain -->
   <script src="https://cdn.jsdelivr.net/npm/steem@0.7.11/dist/steem.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@hiveio/dhive@1.2.7/dist/dhive.min.js"></script>
-    <!-- Script principale dell'applicazione (con type="module" per supportare import/export) -->
+  <script src="https://cdn.jsdelivr.net/npm/@hiveio/dhive@1.2.7/dist/dhive.min.js"></script>  <!-- Script principale dell'applicazione (con type="module" per supportare import/export) -->
   <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vote-tooltip.js') }}"></script>
 </body>

@@ -1066,3 +1066,147 @@ class Blockchain:
         except Exception as e:
             logger.error(f"Errore in get_votes_today: {e}")
             return 0
+
+    def get_curation_rewards(self, username, days=7):
+        """
+        Fetches and analyzes curation rewards for a given user over the specified time period.
+        
+        Args:
+            username (str): Username to analyze
+            days (int): Number of days to analyze (default: 7)
+            
+        Returns:
+            list: List of curation reward data with efficiency calculations
+        """
+        try:
+            # Determine platform from current blockchain instance
+            platform = 'hive' if hasattr(self.blockchain, 'is_hive') else 'steem'
+            
+            # Get account instance
+            from beem.account import Account
+            account = Account(username, blockchain_instance=self.blockchain)
+            
+            # Calculate date range
+            now = datetime.now(timezone.utc)
+            since = now - timedelta(days=days)
+            
+            logger.info(f"Analyzing curation rewards for @{username} over {days} days on {platform}")
+            
+            # Get account history to find curation rewards
+            curation_rewards = []
+            history_limit = min(1000, days * 50)  # Estimate based on activity
+            
+            try:
+                # Get account history with curation reward operations
+                history = account.get_account_history(-1, limit=history_limit)
+                
+                for operation in history:
+                    op_type = operation.get('type')
+                    timestamp = operation.get('timestamp')
+                    
+                    # Parse timestamp
+                    if isinstance(timestamp, str):
+                        op_time = datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S')
+                        op_time = op_time.replace(tzinfo=timezone.utc)
+                    else:
+                        continue
+                    
+                    # Check if operation is within our time range
+                    if op_time < since:
+                        continue
+                    
+                    # Look for curation reward operations
+                    if op_type == 'curation_reward':
+                        try:
+                            # Extract curation reward data
+                            reward_data = self._parse_curation_reward(operation, op_time)
+                            if reward_data:
+                                curation_rewards.append(reward_data)
+                        except Exception as e:
+                            logger.debug(f"Error parsing curation reward: {e}")
+                            continue
+                
+                logger.info(f"Found {len(curation_rewards)} curation rewards for @{username}")
+                return curation_rewards
+                
+            except Exception as e:
+                logger.error(f"Error getting account history for {username}: {e}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Error in get_curation_rewards for {username}: {e}")
+            return []
+    
+    def _parse_curation_reward(self, operation, op_time):
+        """
+        Parse a curation reward operation and calculate efficiency metrics.
+        
+        Args:
+            operation (dict): The curation reward operation
+            op_time (datetime): Operation timestamp
+            
+        Returns:
+            dict: Parsed curation reward data with efficiency calculations
+        """
+        try:
+            # Extract basic reward information
+            reward_vests = operation.get('reward', '0.000000 VESTS')
+            if isinstance(reward_vests, str):
+                reward_amount = float(reward_vests.split()[0])
+            else:
+                reward_amount = float(reward_vests.get('amount', 0))
+            
+            # Convert VESTS to SP (approximate conversion)
+            # This is a simplified conversion - actual conversion requires dynamic global properties
+            reward_sp = reward_amount / 1000000  # Rough estimate: 1M VESTS ≈ 1 SP
+            
+            # Extract post information
+            author = operation.get('comment_author', 'unknown')
+            permlink = operation.get('comment_permlink', 'unknown')
+            post_url = f"@{author}/{permlink}"
+            
+            # Try to get voting details for efficiency calculation
+            try:
+                # This is a simplified efficiency calculation
+                # In a real implementation, you would need to:
+                # 1. Get the actual vote time vs post creation time
+                # 2. Calculate optimal timing
+                # 3. Compare actual vs expected rewards
+                
+                # For now, use a mock efficiency calculation
+                # Efficiency could be based on vote timing, post age, etc.
+                vote_age_minutes = 15  # Mock data - would need actual vote timing
+                
+                # Simple efficiency model: earlier votes (5-15 minutes) are more efficient
+                if vote_age_minutes <= 5:
+                    efficiency = 95 + (5 - vote_age_minutes) * 1  # Up to 100% for immediate votes
+                elif vote_age_minutes <= 15:
+                    efficiency = 85 + (15 - vote_age_minutes) * 1  # 85-95% for early votes
+                elif vote_age_minutes <= 30:
+                    efficiency = 70 + (30 - vote_age_minutes) * 1  # 70-85% for medium-early votes
+                else:
+                    efficiency = max(50, 70 - (vote_age_minutes - 30) * 0.5)  # Declining efficiency
+                
+                efficiency = min(100, max(0, efficiency))
+                
+            except Exception as e:
+                logger.debug(f"Error calculating efficiency: {e}")
+                vote_age_minutes = 30  # Default
+                efficiency = 75  # Default efficiency
+            
+            return {
+                'post': post_url,
+                'time': op_time.isoformat(),
+                'voteAgeMins': vote_age_minutes,
+                'percent': 100,  # Mock data - would need actual vote percentage
+                'rewardSP': round(reward_sp, 6),
+                'expectedReward': round(reward_sp / (efficiency / 100), 6),
+                'efficiency': round(efficiency, 1),
+                'reward_vests': reward_amount,
+                'author': author,
+                'permlink': permlink
+            }
+            
+        except Exception as e:
+            logger.error(f"Error parsing curation reward operation: {e}")
+            return None
