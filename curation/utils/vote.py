@@ -440,17 +440,6 @@ class VoteManager:
                     # Prima prova a ottenere rshares direttamente dal voto (più veloce)
                     vote_rshares = float(voter_data.get('rshares', 0))
                     
-                    # Ottieni rapidamente il ritardo approssimativo del voto
-                    if 'time' in voter_data:
-                        vote_time = datetime.strptime(voter_data['time'], '%Y-%m-%dT%H:%M:%S')
-                        if vote_time.tzinfo is None:
-                            vote_time = vote_time.replace(tzinfo=timezone.utc)
-                    else:
-                        # Usa il tempo stimato per votanti non importanti
-                        vote_time = post_created + timedelta(hours=1)
-                    
-                    vote_delay_minutes = int((vote_time - post_created).total_seconds() / 60)
-                    
                     # Per i votanti importanti, recupera dettagli completi in modo asincrono
                     importance = vote_rshares / 1e12  # Stima preliminare
                     
@@ -461,8 +450,8 @@ class VoteManager:
                         'rshares': vote_rshares,
                         'vesting_shares': 0,
                         'importance': importance,
-                        'vote_time': vote_time.strftime('%Y-%m-%d %H:%M:%S') if hasattr(vote_time, 'strftime') else vote_time,
-                        'vote_delay_minutes': vote_delay_minutes,
+                        'vote_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'vote_delay_minutes': 5,
                         'reputation': 0,
                         'steem_vote_value': 0,
                         'vote_value_usd': 0
@@ -477,6 +466,7 @@ class VoteManager:
                         if 'error' not in details:
                             # Aggiorna con informazioni dettagliate
                             result.update({
+                                'vote_time': details['vote_time'].strftime('%Y-%m-%d %H:%M:%S') if hasattr(details['vote_time'], 'strftime') else details['vote_time'],
                                 'vesting_shares': details['vests'],
                                 'reputation': details['reputation'],
                                 'steem_vote_value': details['vote_value'].get('steem_value', 0),
