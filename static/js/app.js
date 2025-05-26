@@ -515,6 +515,40 @@ class CurationApp {
         const votersResponse = await apiService.getPostVoters(postUrl);
         
         if (votersResponse.success && votersResponse.data.voters) {
+          // Determina la piattaforma in base all'URL
+          const platform = postUrl.includes('peakd.com') || postUrl.includes('hive.blog') ? 'hive' : 'steem';
+          
+          // Per i primi 3 votanti principali, calcola il valore del voto
+          const topVoters = votersResponse.data.voters.slice(0, 3);
+          
+          // Calcola il valore del voto per ogni votante principale (in parallelo)
+          const voteValuePromises = topVoters.map(async (voter) => {
+            try {
+              // Usa il peso effettivo del voto per il calcolo
+              const voteWeight = voter.weight / 100;
+              const voteValue = await blockchainService.calculateVoteValue(voter.voter, voteWeight, platform);
+              return {
+                voter: voter.voter,
+                voteValue
+              };
+            } catch (err) {
+              console.error(`Error calculating vote value for ${voter.voter}:`, err);
+              return {
+                voter: voter.voter,
+                voteValue: { steemValue: 0, sbdValue: 0, error: err.message }
+              };
+            }
+          });
+          
+          // Attendi che tutti i calcoli terminino
+          const voteValues = await Promise.all(voteValuePromises);
+          
+          // Aggiungi i valori dei voti all'oggetto dati
+          votersResponse.data.voteValues = {};
+          voteValues.forEach(item => {
+            votersResponse.data.voteValues[item.voter] = item.voteValue;
+          });
+          
           uiService.renderVotersData(votersContainer, votersResponse.data);
         } else {
           votersContainer.innerHTML = '<div class="error"><i class="fas fa-exclamation-triangle"></i> Could not load voters data</div>';

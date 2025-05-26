@@ -180,7 +180,7 @@ class UIService {
    * @param {Object} data - Dati dei votanti
    */
   renderVotersData(container, data) {
-    const {voters, total_voters, optimal_vote_time} = data;
+    const {voters, total_voters, optimal_vote_time, voteValues} = data;
     
     let votersHtml = `
       <div class="optimal-vote-time">
@@ -211,6 +211,18 @@ class UIService {
                           optimal_vote_time.top_voters.includes(voter.voter);
         const keyVoterClass = isKeyVoter ? 'key-voter' : '';
         
+        // Prepara il markup per il valore del voto (se disponibile)
+        let voteValueHtml = '';
+        if (voteValues && voteValues[voter.voter]) {
+          const vv = voteValues[voter.voter];
+          if (!vv.error) {
+            // Mostra il valore del voto in STEEM/HIVE e SBD/HBD
+            voteValueHtml = `<span class="vote-value" title="Vote value in crypto & USD">
+              $${vv.sbdValue.toFixed(3)} (${vv.steemValue.toFixed(3)})
+            </span>`;
+          }
+        }
+        
         votersHtml += `
           <div class="voter-item ${keyVoterClass}">
             <strong>@${voter.voter}</strong> 
@@ -218,6 +230,7 @@ class UIService {
               <span class="vote-weight">${voteWeight}%</span>
               <span class="vote-timing" title="Vote timing">after ${voteDelay} min</span>
               <span class="vote-power" title="Voter influence score">power: ${importance}</span>
+              ${voteValueHtml}
             </span>
           </div>
         `;

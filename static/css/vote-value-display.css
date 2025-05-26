@@ -1,0 +1,27 @@
+/* Stili per la visualizzazione del valore del voto */
+
+.vote-value {
+  display: inline-block;
+  background-color: #e7f5ff;
+  color: #0066cc;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 0.85em;
+  margin-left: 8px;
+  font-weight: 600;
+}
+
+.dark-theme .vote-value {
+  background-color: #1a3b5c;
+  color: #7cb9ff;
+}
+
+/* Animazione quando i valori vengono caricati */
+@keyframes valueAppear {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.vote-value {
+  animation: valueAppear 0.5s ease-out;
+}

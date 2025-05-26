@@ -167,6 +167,121 @@ class BlockchainService {
   getDomainForPlatform(platform) {
     return platform === 'steem' ? 'https://steemit.com' : 'https://peakd.com';
   }
+
+  /**
+   * Calcola il valore del voto di un utente
+   * @param {string} username - Nome dell'utente
+   * @param {number} voteWeight - Peso del voto (0-100)
+   * @param {string} platform - 'steem' o 'hive'
+   * @returns {Promise<Object>} - Valore del voto in STEEM/HIVE e SBD
+   */
+  async calculateVoteValue(username, voteWeight = 100, platform = 'steem') {
+    try {
+      // Verifica connessione al nodo
+      await this.verifyNodeConnection(platform);
+      
+      // Ottieni l'account dell'utente
+      const accounts = await this.getAccountInfo(username, platform);
+      if (!accounts || accounts.length === 0) {
+        throw new Error(`Account ${username} non trovato`);
+      }
+      
+      const account = accounts[0];
+      
+      // Ottieni proprietà globali
+      let props;
+      if (platform === 'steem') {
+        props = await new Promise((resolve, reject) => {
+          this.steemClient.api.getDynamicGlobalProperties((err, result) => {
+            if (err) reject(err);
+            else resolve(result);
+          });
+        });
+      } else {
+        props = await this.hiveClient.database.getDynamicGlobalProperties();
+      }
+      
+      // Ottieni rewardFund
+      let rewardFund;
+      if (platform === 'steem') {
+        rewardFund = await new Promise((resolve, reject) => {
+          this.steemClient.api.getRewardFund('post', (err, result) => {
+            if (err) reject(err);
+            else resolve(result);
+          });
+        });
+      } else {
+        rewardFund = await this.hiveClient.database.call('get_reward_fund', ['post']);
+      }
+      
+      // Ottieni prezzi correnti
+      let price;
+      if (platform === 'steem') {
+        price = await new Promise((resolve, reject) => {
+          this.steemClient.api.getCurrentMedianHistoryPrice((err, result) => {
+            if (err) reject(err);
+            else resolve(result);
+          });
+        });
+      } else {
+        price = await this.hiveClient.database.getCurrentMedianHistoryPrice();
+      }
+      
+      // Calcolo del valore del voto
+      
+      // 1. Calcola il rapporto SP/VESTS
+      const totalVestingShares = parseFloat(props.total_vesting_shares.split(' ')[0]);
+      const totalVestingFundSteem = parseFloat(props.total_vesting_fund_steem.split(' ')[0]);
+      const steemPerVest = totalVestingFundSteem / totalVestingShares;
+      
+      // 2. Calcola vesting shares effettive
+      const vestingShares = parseFloat(account.vesting_shares.split(' ')[0]);
+      const receivedVesting = parseFloat(account.received_vesting_shares.split(' ')[0]);
+      const delegatedVesting = parseFloat(account.delegated_vesting_shares.split(' ')[0]);
+      const effectiveVestingShares = vestingShares + receivedVesting - delegatedVesting;
+      
+      // 3. Converti vesting shares in SP
+      const sp = effectiveVestingShares * steemPerVest;
+      
+      // 4. Calcola power ratio (r) e peso voto (p)
+      const r = sp / steemPerVest;
+      const votingPower = account.voting_power;
+      const weight = voteWeight * 100;  // peso in percentuale moltiplicato per 100
+      const p = (votingPower * weight / 10000 + 49) / 50;
+      
+      // 5. Calcola rbPrc (reward balance per recent claim)
+      const recentClaims = parseFloat(rewardFund.recent_claims);
+      const rewardBalance = parseFloat(rewardFund.reward_balance.split(' ')[0]);
+      const rbPrc = rewardBalance / recentClaims;
+      
+      // 6. Calcola il prezzo medio
+      const baseAmount = parseFloat(price.base.split(' ')[0]);
+      const quoteAmount = parseFloat(price.quote.split(' ')[0]);
+      const steemToSbdRate = baseAmount / quoteAmount;
+      
+      // 7. Applica la formula ufficiale STEEM
+      const steemValue = r * p * 100 * rbPrc;
+      
+      // 8. Converte STEEM in SBD usando il prezzo medio
+      const sbdValue = steemValue * steemToSbdRate;
+      debugger
+      return {
+        steemValue: parseFloat(steemValue.toFixed(4)),
+        sbdValue: parseFloat(sbdValue.toFixed(4)),
+        votingPower: votingPower / 100, // converte in percentuale
+        sp: parseFloat(sp.toFixed(3))
+      };
+    } catch (error) {
+      console.error(`Errore nel calcolo del valore del voto:`, error);
+      return {
+        steemValue: 0,
+        sbdValue: 0,
+        votingPower: 0,
+        sp: 0,
+        error: error.message
+      };
+    }
+  }
 }
 
 // Esporta un'istanza singleton
