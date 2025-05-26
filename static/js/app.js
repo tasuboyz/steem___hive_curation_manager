@@ -71,9 +71,9 @@ class CurationApp {
         const username = e.target.closest('.delete-btn').dataset.username;
         this.deleteUser(username);
       }
-      
-      // Gestisci il pulsante di visualizzazione votanti
+        // Gestisci il pulsante di visualizzazione votanti
       if (e.target.closest('.show-voters-btn')) {
+        e.stopPropagation(); // Impedisce la propagazione dell'evento verso l'alto
         const username = e.target.closest('.show-voters-btn').getAttribute('id').replace('show-voters-', '');
         const postUrlElement = e.target.closest('.post-info').querySelector('a');
         
@@ -501,8 +501,7 @@ class CurationApp {
    * Mostra/nasconde i votanti di un post
    * @param {string} username - Nome utente
    * @param {string} postUrl - URL del post
-   */
-  async toggleVotersDisplay(username, postUrl) {
+   */  async toggleVotersDisplay(username, postUrl) {
     const votersContainer = document.getElementById(`voters-container-${username}`);
     if (!votersContainer) return;
     
@@ -510,18 +509,34 @@ class CurationApp {
     if (votersContainer.style.display === 'none') {
       votersContainer.style.display = 'block';
       
-      try {
-        // Request voters data
-        const votersResponse = await apiService.getPostVoters(postUrl);
-        
-        if (votersResponse.success && votersResponse.data.voters) {
-          uiService.renderVotersData(votersContainer, votersResponse.data);
-        } else {
-          votersContainer.innerHTML = '<div class="error"><i class="fas fa-exclamation-triangle"></i> Could not load voters data</div>';
+      // Controlla se i dati sono già stati caricati
+      if (!votersContainer.dataset.loaded) {
+        try {
+          // Imposta un flag per evitare richieste multiple simultanee
+          if (votersContainer.dataset.loading === 'true') {
+            console.log('Richiesta già in corso, evito di richiamare l\'API');
+            return;
+          }
+          
+          votersContainer.dataset.loading = 'true';
+          console.log(`Richiedendo votanti per: ${postUrl}`);
+          
+          // Request voters data
+          const votersResponse = await apiService.getPostVoters(postUrl);
+          
+          if (votersResponse.success && votersResponse.data.voters) {
+            uiService.renderVotersData(votersContainer, votersResponse.data);
+            votersContainer.dataset.loaded = 'true';
+          } else {
+            votersContainer.innerHTML = '<div class="error"><i class="fas fa-exclamation-triangle"></i> Could not load voters data</div>';
+          }
+        } catch (error) {
+          console.error('Error loading voters:', error);
+          votersContainer.innerHTML = `<div class="error"><i class="fas fa-exclamation-circle"></i> Error: ${error.message}</div>`;
+        } finally {
+          // Resetta il flag di caricamento
+          votersContainer.dataset.loading = 'false';
         }
-      } catch (error) {
-        console.error('Error loading voters:', error);
-        votersContainer.innerHTML = `<div class="error"><i class="fas fa-exclamation-circle"></i> Error: ${error.message}</div>`;
       }
     } else {
       votersContainer.style.display = 'none';

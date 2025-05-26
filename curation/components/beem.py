@@ -150,7 +150,7 @@ class Blockchain:
         }
         response = requests.post(node_url, headers=headers, data=json.dumps(data))
         if response.ok:
-            return True
+            return response.json().get('result', {})
         else:
             raise Exception(response.reason)
         
@@ -517,7 +517,7 @@ class Blockchain:
         
         raise Exception("Nessun nodo Hive disponibile")
     
-    def get_comment(self, author, permalink, blockchain: str):
+    def get_comment(self, author, permalink, blockchain='steem'):
         for node_url in self.node_urls.get(blockchain):
             if not self.ping_server(node_url):
                 logger.error(f"Impossibile raggiungere il server: {node_url}")
@@ -1056,7 +1056,7 @@ class Blockchain:
             # Scorri la history dei voti del curatore
             for vote in account.get_account_votes():
                 # vote['author'], vote['time']
-                vote_time = vote.get('time')
+                vote_time = vote.get('last_update')
                 if isinstance(vote_time, str):
                     vote_time = datetime.strptime(vote_time, '%Y-%m-%dT%H:%M:%S')
                     vote_time = vote_time.replace(tzinfo=timezone.utc)

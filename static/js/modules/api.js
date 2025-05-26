@@ -6,6 +6,7 @@ class ApiService {
   constructor() {
     this.retryAttempts = 3;
     this.retryDelay = 1000; // 1 second
+    this.pendingRequests = new Map(); // Tiene traccia delle richieste in corso
   }
 
   /**
@@ -82,7 +83,6 @@ class ApiService {
   async deleteUser(username) {
     return await this.sendRequest(`/users/${username}`, 'DELETE');
   }
-
   /**
    * Ottiene i dati dei votanti per un post
    * @param {string} postUrl - URL del post
@@ -90,10 +90,28 @@ class ApiService {
    * @returns {Promise} Dati dei votanti
    */
   async getPostVoters(postUrl, minImportance = 0.1) {
-    return await this.sendRequest(
+    // Crea un identificatore univoco per questa richiesta
+    const requestKey = `voters_${postUrl}_${minImportance}`;
+    
+    // Controlla se c'è già una richiesta in corso per lo stesso URL
+    if (this.pendingRequests.has(requestKey)) {
+      console.log(`Richiesta già in corso per ${postUrl}, restituisco Promise esistente`);
+      return this.pendingRequests.get(requestKey);
+    }
+    
+    // Crea una nuova richiesta e memorizzala
+    const requestPromise = this.sendRequest(
       `/api/post_voters?post_url=${encodeURIComponent(postUrl)}&min_importance=${minImportance}`,
       'GET'
-    );
+    ).finally(() => {
+      // Rimuovi questa richiesta dalla mappa quando è completata
+      this.pendingRequests.delete(requestKey);
+    });
+    
+    // Memorizza questa richiesta nella mappa delle richieste in corso
+    this.pendingRequests.set(requestKey, requestPromise);
+    
+    return requestPromise;
   }
 }
 

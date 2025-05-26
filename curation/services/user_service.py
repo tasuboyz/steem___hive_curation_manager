@@ -106,26 +106,48 @@ class UserService:
         except Exception as e:
             logger.error(f"Errore nella ricerca dell'utente per il post {post_link}: {e}")
             return None
-    
+        
     @staticmethod
     def add_user(user_data, app=None):
-        """Aggiunge un nuovo utente al database"""
+        """Aggiunge un nuovo utente al database o aggiorna se già esiste"""
         try:
             ctx = UserService._ensure_app_context(app)
+            username = user_data['username']
+            
             if ctx:
                 with ctx:
-                    new_user = User(username=user_data['username'], data=user_data)
-                    db.session.add(new_user)
-                    db.session.commit()
+                    # Verifica se l'utente esiste già
+                    existing_user = User.query.filter_by(username=username).first()
+                    if existing_user:
+                        # Aggiorna l'utente esistente
+                        existing_user.data = user_data
+                        db.session.commit()
+                        logger.info(f"Utente {username} aggiornato poiché già esistente")
+                    else:
+                        # Crea un nuovo utente
+                        new_user = User(username=username, data=user_data)
+                        db.session.add(new_user)
+                        db.session.commit()
+                        logger.info(f"Utente {username} aggiunto con successo")
                     return True
             else:
                 # Siamo già in un contesto
-                new_user = User(username=user_data['username'], data=user_data)
-                db.session.add(new_user)
-                db.session.commit()
+                # Verifica se l'utente esiste già
+                existing_user = User.query.filter_by(username=username).first()
+                if existing_user:
+                    # Aggiorna l'utente esistente
+                    existing_user.data = user_data
+                    db.session.commit()
+                    logger.info(f"Utente {username} aggiornato poiché già esistente")
+                else:
+                    # Crea un nuovo utente
+                    new_user = User(username=username, data=user_data)
+                    db.session.add(new_user)
+                    db.session.commit()
+                    logger.info(f"Utente {username} aggiunto con successo")
                 return True
         except Exception as e:
-            logger.error(f"Errore nell'aggiunta dell'utente al database: {e}")
+            logger.error(f"Errore nell'aggiunta/aggiornamento dell'utente al database: {e}")
             return False
     
     @staticmethod

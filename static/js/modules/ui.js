@@ -202,9 +202,12 @@ class UIService {
         // Calcola il peso del voto come percentuale
         const voteWeight = (voter.weight / 100).toFixed(0);
         // Visualizza il ritardo del voto
-        const voteDelay = voter.vote_delay_minutes;
-        // Formatta l'importanza
+        const voteDelay = voter.vote_delay_minutes;        // Formatta l'importanza
         const importance = voter.importance.toFixed(2);
+        
+        // Formatta il valore del voto in dollari
+        const voteValueUSD = voter.vote_value_usd ? `$${voter.vote_value_usd.toFixed(2)}` : '$0.00';
+        const steemValue = voter.steem_vote_value ? `${voter.steem_vote_value.toFixed(3)} STEEM` : '0 STEEM';
         
         // Evidenzia i votanti principali menzionati nella strategia di voto
         const isKeyVoter = optimal_vote_time.top_voters && 
@@ -217,7 +220,8 @@ class UIService {
             <span class="vote-stats">
               <span class="vote-weight">${voteWeight}%</span>
               <span class="vote-timing" title="Vote timing">after ${voteDelay} min</span>
-              <span class="vote-power" title="Voter influence score">power: ${importance}</span>
+              <span class="vote-value" title="Il valore stimato del voto in dollari">${voteValueUSD}</span>
+              <span class="vote-power" title="Voter influence score based on vote value">${steemValue}</span>
             </span>
           </div>
         `;

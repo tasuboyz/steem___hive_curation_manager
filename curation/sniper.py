@@ -8,13 +8,14 @@ from .components.config import steem_domain, hive_domain
 from .components.beem import Blockchain
 from .services.user_service import UserService
 from .services.settings_service import SettingsService
-
+from .utils.vote import VoteManager
 
 class SocialMediaPublisher:
     def __init__(self, app=None):
         self.app = app
         # Inizializza le impostazioni per i test
         self.is_test_mode = True
+        self.vote = VoteManager(app=self.app)
         # Carica la modalità test dal database se possibile
         try:
             self.is_test_mode = SettingsService.is_test_mode(app)
@@ -129,7 +130,7 @@ class SocialMediaPublisher:
                     for post in previous_posts:
                         post_permlink = post.get('permlink', '')
                         if post_permlink:
-                            post_voters = self.beem.get_post_voters(f"@{author}/{post_permlink}", min_importance=0.1)
+                            post_voters = self.vote.get_post_voters(f"@{author}/{post_permlink}", min_importance=0.1)
                             all_voters_data.extend(post_voters)
                     optimal_vote_info = self.beem.calculate_optimal_vote_time(all_voters_data)
                     vote_delay = optimal_vote_info['optimal_time']

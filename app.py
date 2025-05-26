@@ -5,12 +5,15 @@ from curation.components.factory import create_app, init_services, app_state
 from curation.services.user_service import UserService
 from curation.services.settings_service import SettingsService
 from curation.components.beem import Blockchain
+from curation.utils.vote import VoteManager
 import signal
 import sys
 import os
+import time
 
 app = create_app()
 blockchain_connector = Blockchain(app=app)  # Istanza globale per la classe Blockchain
+vote = VoteManager(app=app)
 
 # Definire le route
 @app.route('/')
@@ -23,14 +26,38 @@ def settings():
 
 # Nuovo endpoint per ottenere i votanti di un post
 @app.route('/api/post_voters', methods=['GET'])
-def get_post_voters():
+def gets_post_voters():
     post_url = request.args.get('post_url')
     min_importance = float(request.args.get('min_importance', 0.0))
+    # Imposta use_cache come parametro opzionale, default a True per prestazioni
+    use_cache = request.args.get('use_cache', 'true').lower() != 'false'
     
     if not post_url:
         return jsonify({'error': 'Missing post_url parameter'}), 400
     
+    # Verifica se abbiamo già una risposta in cache per questa richiesta
+    # Usa un identificatore univoco basato su tutti i parametri della richiesta
+    request_id = f"{post_url}_{min_importance}_{use_cache}"
+    
+    # Implementa un dizionario di cache delle richieste se non esiste già
+    if not hasattr(app, 'voters_responses_cache'):
+        app.voters_responses_cache = {}
+        
+    # Verifica se abbiamo una risposta recente in cache (ultimi 30 secondi)
+    if request_id in app.voters_responses_cache:
+        cache_entry = app.voters_responses_cache[request_id]
+        cache_time = cache_entry.get('timestamp', 0)
+        
+        # Usa la risposta in cache se è recente (meno di 30 secondi)
+        if time.time() - cache_time < 30:
+            logger.info(f"Usando risposta in cache per {post_url} (cache di {time.time() - cache_time:.1f} secondi)")
+            return cache_entry.get('response')
+    
     try:
+        # Logga l'inizio della richiesta con timestamp
+        start_time = time.time()
+        logger.info(f"Richiesta votanti per {post_url} con importanza minima {min_importance} (cache: {use_cache})")
+        
         # Determina la blockchain in base all'URL
         platform = 'hive' if 'peakd.com' in post_url or 'hive.blog' in post_url else 'steem'
         
@@ -48,17 +75,34 @@ def get_post_voters():
         if blockchain_connector.blockchain is None:
             return jsonify({'error': f'No available {platform} node'}), 503
         
-        voters_data = blockchain_connector.get_post_voters(post_url, min_importance)
+        # Passa esplicitamente il parametro use_cache
+        voters_data = vote.get_post_voters(post_url, min_importance, use_cache=use_cache)
         
         # Calcola il tempo ottimale di voto in base ai votanti importanti
-        optimal_vote_info = blockchain_connector.calculate_optimal_vote_time(voters_data)
+        optimal_vote_info = vote.calculate_optimal_vote_time(voters_data)
         
-        return jsonify({
-            'voters': voters_data[:10],  # Limita ai 10 votanti più importanti
+        # Logga il tempo di elaborazione
+        processing_time = time.time() - start_time
+        logger.info(f"Analisi votanti completata in {processing_time:.2f}s per {post_url} ({len(voters_data)} votanti)")
+          # Aggiungi un campo che spiega che l'importanza è ora basata sul valore del voto        
+        response = jsonify({
+            'voters': voters_data[:20],  # Limita ai 20 votanti più importanti
             'total_voters': len(voters_data),
             'platform': platform,
-            'optimal_vote_time': optimal_vote_info
+            'optimal_vote_time': optimal_vote_info,
+            'voting_info': {
+                'importance_based_on': 'vote_value_steem',
+                'description': 'Il valore di importanza è ora basato sul valore effettivo del voto in STEEM'
+            }
         })
+        
+        # Salva la risposta in cache per 30 secondi
+        app.voters_responses_cache[request_id] = {
+            'timestamp': time.time(),
+            'response': response
+        }
+        
+        return response
     except Exception as e:
         logger.error(f"Errore nel recupero dei votanti per {post_url}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -66,10 +110,21 @@ def get_post_voters():
 @app.route('/users', methods=['POST'])
 def add_user():
     user_data = request.json
-    success = UserService.add_user(user_data)
-    if success:
-        return jsonify({'message': 'User added successfully'})
-    return jsonify({'message': 'Error adding user'}), 500
+    
+    # Verifica se esiste già un utente con lo stesso username
+    existing_user = UserService.get_user_by_username(user_data['username'])
+    if existing_user:
+        # L'utente esiste già, verrà aggiornato
+        success = UserService.add_user(user_data)
+        if success:
+            return jsonify({'message': 'User updated successfully', 'status': 'updated'})
+        return jsonify({'message': 'Error updating user'}), 500
+    else:
+        # Nuovo utente
+        success = UserService.add_user(user_data)
+        if success:
+            return jsonify({'message': 'User added successfully', 'status': 'added'})
+        return jsonify({'message': 'Error adding user'}), 500
 
 @app.route('/users/<username>', methods=['PUT'])
 def update_user(username):
