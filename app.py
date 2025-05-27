@@ -5,12 +5,14 @@ from curation.components.factory import create_app, init_services, app_state
 from curation.services.user_service import UserService
 from curation.services.settings_service import SettingsService
 from curation.components.beem import Blockchain
+from curation.utils.vote import VoteManager
 import signal
 import sys
 import os
 
 app = create_app()
 blockchain_connector = Blockchain(app=app)  # Istanza globale per la classe Blockchain
+vote_manager = VoteManager()
 
 # Definire le route
 @app.route('/')
@@ -48,10 +50,10 @@ def get_post_voters():
         if blockchain_connector.blockchain is None:
             return jsonify({'error': f'No available {platform} node'}), 503
         
-        voters_data = blockchain_connector.get_post_voters(post_url, min_importance)
+        voters_data = vote_manager.get_post_voters(post_url, min_importance)
         
         # Calcola il tempo ottimale di voto in base ai votanti importanti
-        optimal_vote_info = blockchain_connector.calculate_optimal_vote_time(voters_data)
+        optimal_vote_info = vote_manager.calculate_optimal_vote_time(voters_data)
         
         return jsonify({
             'voters': voters_data[:10],  # Limita ai 10 votanti più importanti

@@ -136,8 +136,8 @@ class Blockchain:
 
         return post_links
     
-    def get_steem_dynamic_global_properties(self):
-        for node_url in self.node_urls.get('steem'):
+    def get_dynamic_global_properties(self, platform='steem'):
+        for node_url in self.node_urls.get(platform):
             if not self.ping_server(node_url):
                 logger.error(f"Server non raggiungibile: {node_url}")
                 continue
@@ -150,34 +150,9 @@ class Blockchain:
         }
         response = requests.post(node_url, headers=headers, data=json.dumps(data))
         if response.ok:
-            return True
+            return response.json().get('result', {})
         else:
             raise Exception(response.reason)
-        
-    def get_hive_dynamic_global_properties(self):
-        for node_url in self.node_urls.get('hive'):
-            if not self.ping_server(node_url):
-                logger.error(f"Server non raggiungibile: {node_url}")
-                continue
-            
-            headers = {'Content-Type': 'application/json'}
-            data = {
-                "jsonrpc": "2.0",
-                "method": "condenser_api.get_dynamic_global_properties",
-                "params": [],
-                "id": 1
-            }
-            
-            try:
-                response = requests.post(node_url, headers=headers, data=json.dumps(data), timeout=5)
-                if response.ok:
-                    return response.json().get('result', {})
-                else:
-                    logger.error(f"Errore dal nodo {node_url}: {response.reason}")
-            except Exception as e:
-                logger.error(f"Errore di connessione al nodo {node_url}: {str(e)}")
-        
-        raise Exception("Nessun nodo Hive disponibile")
 
     def get_steem_cur8_info(self):
         steem_url = 'https://imridd.eu.pythonanywhere.com/api/steem'
