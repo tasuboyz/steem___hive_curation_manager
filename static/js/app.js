@@ -651,74 +651,6 @@ class CurationApp {
   }
 
   /**
-   * Verifica periodicamente i post degli utenti per votare automaticamente
-   */
-  async monitorUsers() {
-    for (const [username, data] of this.users) {
-      try {
-        await blockchainService.verifyNodeConnection(data.platform);
-        const posts = await blockchainService.getLatestPosts(username, data.platform);
-
-        if (posts && posts.length > 0) {
-          const latestPost = posts[0];
-          const postDate = new Date(latestPost.created + 'Z');
-          const now = new Date();
-          const minutesSincePost = (now - postDate) / 1000 / 60;
-          
-          // Verifica se è già stato raggiunto il limite giornaliero di voti per questo autore
-          const canVoteToday = this.checkDailyVoteLimit(username, data);
-          if (!canVoteToday) {
-            console.log(`Skipping vote for ${username}: daily vote limit reached (${data.votesPerDay} votes/day)`);
-            continue;
-          }
-          
-          // Controlla se l'utente usa la modalità automatica
-          const isAutoMode = data.useOptimalTime || data.voteDelay === 'auto';
-          let shouldVote = false;
-          
-          if (isAutoMode) {
-            // Se è in modalità auto, ottieni i dati dei votanti e calcola il tempo ottimale
-            try {
-              const postUrl = `@${username}/${latestPost.permlink}`;
-              const votersResponse = await apiService.getPostVoters(postUrl);
-              
-              if (votersResponse.success && votersResponse.data.optimal_vote_time) {
-                const optimalTime = votersResponse.data.optimal_vote_time.optimal_time;
-                const voteWindow = votersResponse.data.optimal_vote_time.vote_window;
-                
-                // Vota se siamo nella finestra ottimale (tra min e max)
-                if (minutesSincePost >= voteWindow[0] && minutesSincePost <= voteWindow[1]) {
-                  console.log(`Voting on post by ${username} with weight ${data.voteWeight}% (Optimal Time: ${optimalTime})`);
-                  shouldVote = true;
-                }
-              }
-            } catch (error) {
-              console.error(`Error getting optimal vote time for ${username}: ${error}`);
-            }
-          } else {
-            // Modalità manuale originale
-            if (minutesSincePost >= data.voteDelay && minutesSincePost < data.voteDelay + 1) {
-              console.log(`Voting on post by ${username} with weight ${data.voteWeight}%`);
-              shouldVote = true;
-            }
-          }
-          
-          // Se è il momento di votare, aggiorna il contatore giornaliero
-          if (shouldVote) {
-            // Logica di voto effettiva
-            // ...
-            
-            // Aggiorna il contatore dei voti e la data dell'ultimo voto
-            this.updateVoteCounter(username, data);
-          }
-        }
-      } catch (error) {
-        console.error(`Error monitoring ${username}: ${error}`);
-      }
-    }
-  }
-
-  /**
    * Inizializza il tema dell'interfaccia
    */
   initializeTheme() {
@@ -839,6 +771,3 @@ class CurationApp {
 // Inizializza l'applicazione
 const curationApp = new CurationApp();
 window.curationApp = curationApp;
-
-// Start monitoring loop
-setInterval(() => curationApp.monitorUsers(), 60000); // Check every minute
