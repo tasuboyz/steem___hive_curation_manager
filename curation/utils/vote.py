@@ -214,10 +214,10 @@ class VoteManager:
                     
                     # Calcola l'importanza usando rshares direttamente se disponibili
                     importance = vote_rshares / 1e12  # Normalizza per leggibilità
-                    
-                    # Solo per i top votanti, ottieni ulteriori informazioni sull'account
+                      # Solo per i top votanti, ottieni ulteriori informazioni sull'account
                     vests = 0
                     reputation = 0
+                    steem_vote_value = 0
                     
                     # Per i primi N votanti o quelli con rshares significativi, ottieni dettagli aggiuntivi
                     if processed_voters <= max_detailed_voters or vote_rshares >= 1e9:  # 1B rshares come soglia
@@ -226,7 +226,12 @@ class VoteManager:
                             voter_account = Account(voter_name, blockchain_instance=blockchain_instance)
                             vests = float(voter_account['vesting_shares'].amount) + float(voter_account['received_vesting_shares'].amount) - float(voter_account['delegated_vesting_shares'].amount)
                             calculate_vote_value = self.calculate_vote_value(vote_percent, effective_vests=vests)
-                            importance = max(importance, vests / 1e6)  # Usa il valore maggiore tra rshares e vests
+                            steem_vote_value = calculate_vote_value.get('steem_value', 0)
+                            # Calcola l'importanza considerando sia i vesting shares che il valore in STEEM
+                            steem_importance = steem_vote_value * 10  # Diamo più peso al valore effettivo in STEEM
+                            vest_importance = vests / 1e6
+                            # Usa una media ponderata con più peso al valore STEEM (70% STEEM, 30% vesting)
+                            importance = 0.7 * steem_importance + 0.3 * vest_importance
                             reputation = voter_account.get_reputation()
                         except Exception as e:
                             logger.debug(f"Non è stato possibile ottenere dettagli completi per {voter_name}: {e}")
@@ -247,9 +252,8 @@ class VoteManager:
                 except Exception as e:
                     logger.warning(f"Error processing voter {vote_data.get('voter', 'unknown')}: {str(e)}")
                     continue
-            
-            # Sort by importance (vesting shares o rshares)
-            voters_data.sort(key=lambda x: x['importance'], reverse=True)
+              # Sort by steem_vote_value primarily, then by importance as secondary factor
+            voters_data.sort(key=lambda x: (x['steem_vote_value'] or 0, x['importance']), reverse=True)
             
             # Limita il risultato finale ai votanti più importanti
             final_voters_limit = max(20, max_detailed_voters)  # Mantieni almeno questo numero di votanti importanti
@@ -287,15 +291,22 @@ class VoteManager:
                 'explanation': 'Nessun dato sui votanti disponibile, usando il tempo predefinito di 5 minuti',
                 'vote_window': (4.5, 5.5)  # Finestra di voto predefinita
             }
-        
-        # Ordina i votanti per importanza (decrescente)
-        important_voters = sorted(voters_data, key=lambda x: x.get('importance', 0), reverse=True)
+          # Ordina i votanti per valore del voto in STEEM (decrescente)
+        important_voters = sorted(voters_data, key=lambda x: x.get('steem_vote_value', 0) or 0, reverse=True)
         
         # Prendi i 3 votanti più importanti, se disponibili
         top_voters = important_voters[:min(3, len(important_voters))]
         
-        # Calcola l'importanza totale di questi votanti
-        total_importance = sum(v.get('importance', 0) for v in top_voters)
+        # Calcola il valore totale in STEEM di questi votanti
+        total_steem_value = sum(v.get('steem_vote_value', 0) or 0 for v in top_voters)
+        
+        # Usa il valore tradizionale dell'importanza come fallback se non ci sono valori STEEM
+        if total_steem_value <= 0:
+            important_voters = sorted(voters_data, key=lambda x: x.get('importance', 0), reverse=True)
+            top_voters = important_voters[:min(3, len(important_voters))]
+            total_importance = sum(v.get('importance', 0) for v in top_voters)
+        else:
+            total_importance = total_steem_value  # Usa il valore STEEM come importanza totale
         
         if total_importance <= 0:
             return {
@@ -303,15 +314,16 @@ class VoteManager:
                 'explanation': 'Importanza dei votanti troppo bassa, usando il tempo predefinito di 5 minuti',
                 'vote_window': (4.5, 5.5)
             }
-        
-        # Calcola il tempo medio ponderato di voto in base all'importanza
+          # Calcola il tempo medio ponderato di voto in base al valore STEEM
         weighted_vote_time = 0
         for voter in top_voters:
-            importance = voter.get('importance', 0)
+            # Usa steem_vote_value se disponibile, altrimenti usa l'importanza tradizionale
+            voter_value = voter.get('steem_vote_value', 0) or voter.get('importance', 0)
             delay_minutes = voter.get('vote_delay_minutes', 30)  # Default a 30 minuti se non specificato
-            weight = importance / total_importance
+            weight = voter_value / total_importance
             weighted_vote_time += delay_minutes * weight
-            # Trova il votante più importante e il suo tempo di voto
+            
+        # Trova il votante più importante (con più valore STEEM) e il suo tempo di voto
         most_important_voter = top_voters[0]
         most_important_time = most_important_voter.get('vote_delay_minutes', 30)
         
@@ -321,12 +333,14 @@ class VoteManager:
         
         # Calcola il tempo di voto ottimale - leggermente prima del votante importante più veloce
         optimal_time = max(0.5, earliest_vote_time - buffer_minutes)
+          # Genera la spiegazione appropriata, indicando anche il valore in STEEM del votante
+        most_important_steem_value = most_important_voter.get('steem_vote_value', 0) or 0
+        earliest_steem_value = earliest_important_voter.get('steem_vote_value', 0) or 0
         
-        # Genera la spiegazione appropriata
         if earliest_important_voter['voter'] == most_important_voter['voter']:
-            explanation = f"Votare {buffer_minutes} minuti prima del votante più importante (@{most_important_voter.get('voter', 'sconosciuto')}) che vota dopo {most_important_time:.1f} minuti"
+            explanation = f"Votare {buffer_minutes} minuti prima del votante più influente (@{most_important_voter.get('voter', 'sconosciuto')}, {most_important_steem_value:.3f} STEEM) che vota dopo {most_important_time:.1f} minuti"
         else:
-            explanation = f"Votare {buffer_minutes} minuti prima del primo votante importante (@{earliest_important_voter.get('voter', 'sconosciuto')}) che vota dopo {earliest_vote_time:.1f} minuti"
+            explanation = f"Votare {buffer_minutes} minuti prima del primo votante influente (@{earliest_important_voter.get('voter', 'sconosciuto')}, {earliest_steem_value:.3f} STEEM) che vota dopo {earliest_vote_time:.1f} minuti"
         
         # Finestra stretta per massimizzare la precisione
         vote_window = (optimal_time - 0.2, optimal_time + 0.2)

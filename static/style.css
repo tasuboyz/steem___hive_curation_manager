@@ -19,6 +19,7 @@
   --primary-color: #4a90e2;
   --secondary-color: #2a6bcc;
   --background-color: #1a1a1a;
+  --success-color: #39cb74;
   --card-background: #2d2d2d;
   --border-color: #404040;
   --text-color: #ffffff;
@@ -710,15 +711,28 @@ input:focus {
 }
 
 .voter-item {
-  padding: 0.5rem;
+  padding: 8px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
   border-bottom: 1px solid var(--border-color);
+  margin-bottom: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.voter-item:hover {
+  background-color: rgba(0, 0, 0, 0.02);
 }
 
 .voter-item:last-child {
   border-bottom: none;
+}
+
+.voter-main-stats {
+  display: flex;
+  justify-content: space-between;
+  margin: 0.25rem 0;
+  align-items: center;
 }
 
 .vote-stats {
@@ -726,6 +740,7 @@ input:focus {
   gap: 0.75rem;
   color: var(--text-secondary);
   font-size: 0.85rem;
+  margin-top: 0.2rem;
 }
 
 .vote-weight {
@@ -735,16 +750,43 @@ input:focus {
 
 .vote-timing {
   white-space: nowrap;
+  font-style: italic;
 }
 
 .vote-power {
   white-space: nowrap;
+  opacity: 0.8;
+  font-size: 0.8rem;
 }
 
-.loading-voters {
-  text-align: center;
+.vote-value {
+  white-space: nowrap;
+  color: var(--success-color, #2b9348);
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.loading-voters {  text-align: center;
   padding: 0.5rem;
   color: var(--text-secondary);
+}
+
+/* Voter list styles */
+.voters-info {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: -5px 0 10px;
+  font-style: italic;
+  padding: 5px 8px;
+  background-color: rgba(0, 0, 0, 0.03);
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.voters-info i {
+  color: var(--primary-color);
 }
 
 /* Optimal Vote Time styles */
@@ -852,12 +894,21 @@ input:focus {
 
 /* Key voter highlight */
 .key-voter {
-  background-color: rgba(255, 236, 179, 0.2);
+  background-color: rgba(255, 236, 179, 0.3);
   border-left: 3px solid var(--warning-color);
+  padding: 5px 8px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 .key-voter strong {
   color: var(--primary-color);
+}
+
+.key-voter .vote-value {
+  color: var(--success-color);
+  font-weight: 700;
+  text-shadow: 0 0 1px rgba(0,0,0,0.1);
 }
 
 /* Stili per il toggle switch Auto Optimal */

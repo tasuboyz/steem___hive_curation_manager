@@ -12,8 +12,7 @@ import storageService from './modules/storage.js';
 /**
  * Classe principale dell'applicazione Curation Manager
  */
-class CurationApp {
-  constructor() {
+class CurationApp {  constructor() {
     this.currentPlatform = 'steem';
     this.users = new Map();
     
@@ -24,6 +23,11 @@ class CurationApp {
       // Carica gli utenti salvati e il tema
       this.loadSavedUsers();
       this.initializeTheme();
+      
+      // Mostra notifica del cambiamento metrica
+      setTimeout(() => {
+        uiService.showStatus('Il sistema di valutazione dei votanti ora usa il valore in STEEM come metrica principale', 'info', 6000);
+      }, 1500);
     });
   }
 

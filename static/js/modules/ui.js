@@ -36,20 +36,20 @@ class UIService {
       document.querySelector('.container').appendChild(this.statusMessageElement);
     }
   }
-
   /**
    * Mostra un messaggio di stato
    * @param {string} message - Messaggio da mostrare
    * @param {string} type - Tipo di messaggio ('info', 'success', 'error')
+   * @param {number} duration - Durata in millisecondi (default 3000ms)
    */
-  showStatus(message, type = 'info') {
+  showStatus(message, type = 'info', duration = 3000) {
     this._initStatusMessage();
     this.statusMessageElement.textContent = message;
     this.statusMessageElement.className = `status-message ${type}`;
     this.statusMessageElement.style.display = 'block';
     setTimeout(() => {
       this.statusMessageElement.style.display = 'none';
-    }, 3000);
+    }, duration);
   }
 
   /**
@@ -192,18 +192,24 @@ class UIService {
           </div>
           <div class="vote-explanation">${optimal_vote_time.explanation}</div>
         </div>
+      </div>      <h5><i class="fas fa-chart-bar"></i> Top Voters (${total_voters} total)</h5>
+      <div class="voters-info">
+        <i class="fas fa-info-circle"></i> 
+        Ordinati per impatto economico (valore in STEEM)
       </div>
-      <h5><i class="fas fa-chart-bar"></i> Top Voters (${total_voters} total)</h5>
     `;
     
     if (voters.length > 0) {
       votersHtml += '<div class="voters-list">';
-      voters.forEach(voter => {
-        // Calcola il peso del voto come percentuale
+      voters.forEach(voter => {        // Calcola il peso del voto come percentuale
         const voteWeight = (voter.weight / 100).toFixed(0);
         // Visualizza il ritardo del voto
         const voteDelay = voter.vote_delay_minutes;
-        // Formatta l'importanza
+        
+        // Formatta il valore del voto in STEEM - ora principale metrica di importanza
+        const voteValue = voter.steem_vote_value > 0 ? voter.steem_vote_value.toFixed(3) : "0.000";
+        
+        // Formatta l'importanza tradizionale - ora secondaria
         const importance = voter.importance.toFixed(2);
         
         // Evidenzia i votanti principali menzionati nella strategia di voto
@@ -214,10 +220,13 @@ class UIService {
         votersHtml += `
           <div class="voter-item ${keyVoterClass}">
             <strong>@${voter.voter}</strong> 
+            <div class="voter-main-stats">
+              <span class="vote-value" title="Estimated vote value in STEEM">${voteValue} STEEM</span>
+              <span class="vote-timing" title="Vote timing">after ${voteDelay} min</span>
+            </div>
             <span class="vote-stats">
               <span class="vote-weight">${voteWeight}%</span>
-              <span class="vote-timing" title="Vote timing">after ${voteDelay} min</span>
-              <span class="vote-power" title="Voter influence score">power: ${importance}</span>
+              <span class="vote-power" title="Traditional influence score">rank: ${importance}</span>
             </span>
           </div>
         `;
