@@ -8,6 +8,13 @@ from beem.account import Account
 import time
 from datetime import datetime, timezone, timedelta
 from beem.vote import Vote
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
+import threading
+
+# Cache locale degli account
+_account_cache = {}
+_account_cache_lock = threading.RLock()
 
 # Istanza globale del BlockchainConnector
 blockchain_connector = Blockchain(app=current_app)
@@ -15,7 +22,35 @@ blockchain_connector = Blockchain(app=current_app)
 class VoteManager:
     def __init__(self, blockchain_connector_instance=None):
         self.blockchain_connector = blockchain_connector_instance or blockchain_connector
+        # Cache temporanea per account e voti durante una singola chiamata
+        self._local_cache = {}
     
+    def _get_cached_account(self, voter_name, blockchain_instance):
+        """Ottiene un account dalla cache o dalla blockchain con meccanismo di caching"""
+        cache_key = f"{voter_name}_{id(blockchain_instance)}"
+        
+        # Prima controlla la cache locale della classe
+        if cache_key in self._local_cache:
+            return self._local_cache[cache_key]
+        
+        # Poi controlla la cache globale con lock per thread safety
+        with _account_cache_lock:
+            if cache_key in _account_cache:
+                self._local_cache[cache_key] = _account_cache[cache_key]
+                return _account_cache[cache_key]
+        
+        # Se non in cache, ottieni dall'API e salva in cache
+        try:
+            account = Account(voter_name, blockchain_instance=blockchain_instance)
+            # Salva nelle cache
+            with _account_cache_lock:
+                _account_cache[cache_key] = account
+                self._local_cache[cache_key] = account
+            return account
+        except Exception as e:
+            logger.debug(f"Errore nel recupero dell'account {voter_name}: {str(e)}")
+            return None
+
     def calculate_vote_value(self, vote_percent, effective_vests=None, voting_power=9200):
         """Calculate vote value based on blockchain parameters, similar to the JS implementation."""
         try:
@@ -103,21 +138,24 @@ class VoteManager:
                 "steem_value": 0,
                 "sbd_value": 0,
                 "error": str(e)
-            }
-
-    def get_post_voters(self, post_url, min_importance=0.0):
+            }    
+        
+    def get_post_voters(self, post_url, min_importance=0.0, use_cache=True, max_workers=5):
         """Get the voters of a post sorted by importance (vesting shares or rshares)
         
         Args:
             post_url (str): The URL or identifier of the post
             min_importance (float): Minimum importance threshold to filter voters
             use_cache (bool): Whether to use cached voters data if available
+            max_workers (int): Maximum number of threads to use for parallel processing
             
         Returns:
             list: List of dictionaries with voter information
         """
     
         try:
+            # Reset local cache for this call
+            self._local_cache = {}
             start_time = time.time()
             
             max_detailed_voters = 10  # Limite per analisi dettagliate
@@ -127,6 +165,7 @@ class VoteManager:
             curator_info = blockchain_connector.get_curator_info(platform)
             curator_username = (curator_info.get('username') or '').lower()
             comment = Comment(post_url, blockchain_instance=blockchain_instance)
+            
             # Ottiene i dati completi del post
             comment_data = comment.json()
             
@@ -143,114 +182,100 @@ class VoteManager:
             if not active_votes and hasattr(comment, 'get_active_votes'):
                 active_votes = comment.get_active_votes()
             
-            logger.info(f"Trovati {len(active_votes)} voti per il post {post_url}")
+            total_votes = len(active_votes)
+            logger.info(f"Trovati {total_votes} voti per il post {post_url}")
             
-            # Pre-filtraggio: prima ordina i voti per rshares se disponibili
-            if active_votes and 'rshares' in active_votes[0]:
+            # Ottimizzazione 1: Pre-filtraggio migliorato
+            # Prima ordina in base a rshares se disponibili (solo se ci sono più voti del limite)
+            if total_votes > max_total_voters and active_votes and 'rshares' in active_votes[0]:
                 active_votes.sort(key=lambda v: float(v.get('rshares', 0)), reverse=True)
-                active_votes = active_votes[:max_total_voters]  # Prendi solo i top N voti per rshares
+                active_votes = active_votes[:max_total_voters]
                 logger.info(f"Pre-filtrati i top {max_total_voters} voti per {post_url} basati su rshares")
-            else:
-                # Se non possiamo ordinare per rshares, limita comunque il numero totale
+            elif total_votes > max_total_voters:
+                # Limitazione semplice se non possiamo ordinare
                 active_votes = active_votes[:max_total_voters]
                 logger.info(f"Limitati a {max_total_voters} voti senza pre-ordinamento per {post_url}")
             
-            # Get voters data
-            voters_data = []
-            processed_voters = 0
+            # Dividi i voti in due gruppi: quelli che richiedono analisi dettagliata e quelli che richiedono analisi base
+            detailed_votes = active_votes[:min(max_detailed_voters, len(active_votes))]
+            basic_votes = active_votes[min(max_detailed_voters, len(active_votes)):]
             
-            # Processa i voti più significativi (in batch per maggiore efficienza)
-            for vote_data in active_votes:
-                try:
-                    voter_name = vote_data['voter']
-                    # Escludi il curatore stesso
-                    if voter_name.lower() == curator_username:
-                        continue
-                    processed_voters += 1
-                    
-                    # Prima prova a ottenere rshares direttamente dal voto (più veloce)
-                    vote_rshares = float(vote_data.get('rshares', 0))
-                    
-                    # Salta rapidamente i voti non significativi se abbiamo superato il limite per analisi dettagliate
-                    if processed_voters > max_detailed_voters and vote_rshares < 1e7:  # 10M rshares come soglia
-                        continue
-                    
-                    if processed_voters <= max_detailed_voters:
-                        try:
-                            vote = Vote(voter_name, post_url, blockchain_instance=blockchain_instance)
-                            vote_time = vote.time
-                            vote_percent = vote.percent
-                            if vote_time.tzinfo is None:
-                                vote_time = vote_time.replace(tzinfo=timezone.utc)
-                            
-                            if not vote_rshares or vote_rshares == 0:
-                                vote_rshares = float(vote.rshares)
-                            
-                        except Exception as vote_error:
-                            logger.debug(f"Errore nel recupero dati voto per {voter_name}: {vote_error}")
-                            vote_time = post_created + timedelta(hours=1)  # stima
-                    else:
-                        # Per votanti meno importanti, usa una stima
-                        vote_time = post_created + timedelta(hours=1)
-                    
-                    # Calcola il ritardo del voto in minuti
-                    vote_delay_minutes = int((vote_time - post_created).total_seconds() / 60)
-                    
-                    # Calcola l'importanza usando rshares direttamente se disponibili
-                    importance = vote_rshares / 1e12  # Normalizza per leggibilità
-                      # Solo per i top votanti, ottieni ulteriori informazioni sull'account
-                    vests = 0
-                    reputation = 0
-                    steem_vote_value = 0
-                    
-                    # Per i primi N votanti o quelli con rshares significativi, ottieni dettagli aggiuntivi
-                    if processed_voters <= max_detailed_voters or vote_rshares >= 1e9:  # 1B rshares come soglia
-                        try:
-                            # Cache locale temporanea per account (durante questa esecuzione)
-                            voter_account = Account(voter_name, blockchain_instance=blockchain_instance)
-                            vests = float(voter_account['vesting_shares'].amount) + float(voter_account['received_vesting_shares'].amount) - float(voter_account['delegated_vesting_shares'].amount)
-                            calculate_vote_value = self.calculate_vote_value(vote_percent, effective_vests=vests)
-                            steem_vote_value = calculate_vote_value.get('steem_value', 0)
-                            # Calcola l'importanza considerando sia i vesting shares che il valore in STEEM
-                            steem_importance = steem_vote_value * 10  # Diamo più peso al valore effettivo in STEEM
-                            vest_importance = vests / 1e6
-                            # Usa una media ponderata con più peso al valore STEEM (70% STEEM, 30% vesting)
-                            importance = 0.7 * steem_importance + 0.3 * vest_importance
-                            reputation = voter_account.get_reputation()
-                        except Exception as e:
-                            logger.debug(f"Non è stato possibile ottenere dettagli completi per {voter_name}: {e}")
-                    
-                    if importance >= min_importance or vote_rshares >= min_importance * 1e12:
-                        voters_data.append({
-                            'voter': voter_name,
-                            'weight': vote_percent,
-                            'rshares': vote_rshares,
-                            'vesting_shares': vests,
-                            'importance': importance,
-                            'vote_time': vote_time.strftime('%Y-%m-%d %H:%M:%S') if hasattr(vote_time, 'strftime') else vote_time,
-                            'vote_delay_minutes': vote_delay_minutes,
-                            'reputation': reputation,
-                            'steem_vote_value': calculate_vote_value.get('steem_value', 0) if 'calculate_vote_value' in locals() else 0,
-                            'sbd_vote_value': calculate_vote_value.get('sbd_value', 0) if 'calculate_vote_value' in locals() else 0
-                        })
-                except Exception as e:
-                    logger.warning(f"Error processing voter {vote_data.get('voter', 'unknown')}: {str(e)}")
-                    continue
-              # Sort by steem_vote_value primarily, then by importance as secondary factor
-            voters_data.sort(key=lambda x: (x['steem_vote_value'] or 0, x['importance']), reverse=True)
+            logger.info(f"Analisi dettagliata per {len(detailed_votes)} voti, analisi base per {len(basic_votes)} voti")
+            
+            # Prepara le liste per i risultati
+            voters_data = []
+            
+            # Ottimizzazione 2: Processa in parallelo i voti che richiedono analisi dettagliata
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Prepara i futures per l'analisi dettagliata
+                detailed_futures = {
+                    executor.submit(
+                        self._process_vote_data, 
+                        vote_data, 
+                        post_url, 
+                        blockchain_instance, 
+                        post_created,
+                        curator_username,
+                        True,  # process_details
+                        min_importance
+                    ): vote_data for vote_data in detailed_votes
+                }
+                
+                # Aggiungi futures per voti con analisi base (quelli con rshares alti)
+                important_basic_votes = [v for v in basic_votes 
+                                        if float(v.get('rshares', 0)) >= 1e9]  # 1B rshares come soglia
+                basic_futures = {
+                    executor.submit(
+                        self._process_vote_data, 
+                        vote_data, 
+                        post_url, 
+                        blockchain_instance, 
+                        post_created,
+                        curator_username,
+                        False,  # no process_details
+                        min_importance
+                    ): vote_data for vote_data in important_basic_votes
+                }
+                
+                # Processa i voti meno importanti direttamente (senza threads)
+                remaining_votes = [v for v in basic_votes if float(v.get('rshares', 0)) < 1e9]
+                
+                # Raccolta risultati dai thread dettagliati
+                for future in as_completed(detailed_futures):
+                    result = future.result()
+                    if result:
+                        voters_data.append(result)
+                
+                # Raccolta risultati dai thread di base
+                for future in as_completed(basic_futures):
+                    result = future.result()
+                    if result:
+                        voters_data.append(result)
+            
+            # Processa rimanenti voti senza threads (per quelli con rshares troppo bassi)
+            for vote_data in remaining_votes:
+                result = self._process_vote_data(
+                    vote_data, post_url, blockchain_instance, post_created, 
+                    curator_username, False, min_importance
+                )
+                if result:
+                    voters_data.append(result)
+            
+            # Ordina i dati finali
+            voters_data.sort(key=lambda x: (x.get('steem_vote_value', 0) or 0, x.get('importance', 0)), reverse=True)
             
             # Limita il risultato finale ai votanti più importanti
-            final_voters_limit = max(20, max_detailed_voters)  # Mantieni almeno questo numero di votanti importanti
+            final_voters_limit = max(20, max_detailed_voters)  # Mantieni almeno questo numero di votanti
             if len(voters_data) > final_voters_limit:
                 voters_data = voters_data[:final_voters_limit]
             
             # Logga il tempo totale di esecuzione e i primi votanti importanti
             execution_time = time.time() - start_time
-            logger.info(f"Analisi votanti completata in {execution_time:.2f} secondi")
+            logger.info(f"Analisi votanti completata in {execution_time:.2f} secondi (utilizzo cache: {use_cache})")
             
             if voters_data:
-                top_voters = [f"{v['voter']} (dopo {v['vote_delay_minutes']} min., importanza: {v['importance']:.2f})" 
-                            for v in voters_data[:3]]
+                top_voters = [f"{v['voter']} (dopo {v['vote_delay_minutes']} min., importanza: {v.get('importance', 0):.2f})" 
+                             for v in voters_data[:3]]
                 logger.info(f"Top votanti per {post_url}: {', '.join(top_voters)}")
             
             return voters_data
@@ -341,3 +366,168 @@ class VoteManager:
             'top_voters': [v.get('voter', 'sconosciuto') for v in top_voters],
             'vote_window': (round(vote_window[0], 1), round(vote_window[1], 1))
         }
+    
+    @lru_cache(maxsize=128)
+    def calculate_vote_value_cached(self, vote_percent, effective_vests=None, voting_power=9200):
+        """Versione con cache del metodo calculate_vote_value per migliorare le prestazioni"""
+        return self.calculate_vote_value(vote_percent, effective_vests, voting_power)
+        
+    def calculate_vote_values_batch(self, vote_data_list, max_workers=5):
+        """Calcola il valore di voto per un lotto di votanti in parallelo
+        
+        Args:
+            vote_data_list (list): Lista di dizionari con 'voter_name', 'vote_percent', 'vests'
+            max_workers (int): Numero massimo di thread worker 
+            
+        Returns:
+            dict: Dizionario con chiavi voter_name e valori con risultati del calcolo
+        """
+        results = {}
+        
+        def process_single_vote(vote_info):
+            try:
+                voter = vote_info['voter_name']
+                percent = vote_info.get('vote_percent', 10000)
+                vests = vote_info.get('vests', None)
+                # Usa la versione cached del metodo
+                result = self.calculate_vote_value_cached(percent, vests)
+                return voter, result
+            except Exception as e:
+                logger.debug(f"Errore nel calcolo del valore di voto per {vote_info.get('voter_name')}: {e}")
+                return vote_info.get('voter_name'), {
+                    "steem_value": 0,
+                    "sbd_value": 0,
+                    "error": str(e)
+                }
+                
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(process_single_vote, vote_data): vote_data for vote_data in vote_data_list}
+            
+            for future in as_completed(futures):
+                try:
+                    voter, result = future.result()
+                    results[voter] = result
+                except Exception as e:
+                    logger.error(f"Errore imprevisto nel processing del voto: {e}")
+        
+        return results
+    
+    def _process_vote_data(self, vote_data, post_url, blockchain_instance, post_created, 
+                          curator_username, process_details=False, min_importance=0.0):
+        """Processa un singolo voto e restituisce i dati del votante"""
+        try:
+            voter_name = vote_data['voter']
+            # Escludi il curatore stesso
+            if voter_name.lower() == curator_username:
+                return None
+                
+            # Prima prova a ottenere rshares direttamente dal voto (più veloce)
+            vote_rshares = float(vote_data.get('rshares', 0))
+            vote_time = None
+            vote_percent = float(vote_data.get('percent', 0))
+            
+            # Se richiesta analisi dettagliata o se il voto ha rshares significativi
+            if process_details or vote_rshares >= 1e9:  # 1B rshares come soglia
+                try:
+                    vote = Vote(voter_name, post_url, blockchain_instance=blockchain_instance)
+                    vote_time = vote.time
+                    vote_percent = vote.percent
+                    if vote_time.tzinfo is None:
+                        vote_time = vote_time.replace(tzinfo=timezone.utc)
+                    
+                    if not vote_rshares or vote_rshares == 0:
+                        vote_rshares = float(vote.rshares)
+                        
+                except Exception as vote_error:
+                    logger.debug(f"Errore nel recupero dati voto per {voter_name}: {vote_error}")
+                    vote_time = None
+            
+            # Se non abbiamo il tempo del voto, usa una stima
+            if vote_time is None:
+                vote_time = post_created + timedelta(hours=1)  # stima
+                
+            # Calcola il ritardo del voto in minuti
+            vote_delay_minutes = int((vote_time - post_created).total_seconds() / 60)
+            
+            # Calcola l'importanza usando rshares direttamente se disponibili
+            importance = vote_rshares / 1e12  # Normalizza per leggibilità
+            
+            # Variabili predefinite
+            vests = 0
+            reputation = 0
+            steem_vote_value = 0
+            sbd_vote_value = 0
+            calculate_vote_value = None
+            
+            # Per i voti con dettagli o con rshares significativi, ottieni dettagli aggiuntivi
+            if process_details or vote_rshares >= 1e9:
+                # Ottieni account dalla cache o dalla blockchain
+                voter_account = self._get_cached_account(voter_name, blockchain_instance)
+                if voter_account:
+                    try:
+                        vests = float(voter_account['vesting_shares'].amount) + \
+                               float(voter_account['received_vesting_shares'].amount) - \
+                               float(voter_account['delegated_vesting_shares'].amount)
+                        
+                        calculate_vote_value = self.calculate_vote_value(vote_percent, effective_vests=vests)
+                        steem_vote_value = calculate_vote_value.get('steem_value', 0)
+                        sbd_vote_value = calculate_vote_value.get('sbd_value', 0)
+                        
+                        # Calcola l'importanza considerando sia i vesting shares che il valore in STEEM
+                        steem_importance = steem_vote_value * 10  # Diamo più peso al valore effettivo in STEEM
+                        vest_importance = vests / 1e6
+                        # Usa una media ponderata con più peso al valore STEEM (70% STEEM, 30% vesting)
+                        importance = 0.7 * steem_importance + 0.3 * vest_importance
+                        
+                        reputation = voter_account.get_reputation()
+                    except Exception as e:
+                        logger.debug(f"Non è stato possibile calcolare tutti i dettagli per {voter_name}: {e}")
+            
+            # Verifica se il votante supera la soglia di importanza minima
+            if importance >= min_importance or vote_rshares >= min_importance * 1e12:
+                return {
+                    'voter': voter_name,
+                    'weight': vote_percent,
+                    'rshares': vote_rshares,
+                    'vesting_shares': vests,
+                    'importance': importance,
+                    'vote_time': vote_time.strftime('%Y-%m-%d %H:%M:%S') if hasattr(vote_time, 'strftime') else vote_time,
+                    'vote_delay_minutes': vote_delay_minutes,
+                    'reputation': reputation,
+                    'steem_vote_value': steem_vote_value,
+                    'sbd_vote_value': sbd_vote_value
+                }
+            return None
+                
+        except Exception as e:
+            logger.debug(f"Error processing voter {vote_data.get('voter', 'unknown')}: {str(e)}")
+            return None
+
+    # Funzioni di utility per la cache degli account
+def clear_account_cache():
+    """Pulisce la cache globale degli account"""
+    with _account_cache_lock:
+        _account_cache.clear()
+    
+def get_account_cache_stats():
+    """Restituisce statistiche sulla cache degli account"""
+    with _account_cache_lock:
+        return {
+            "cache_size": len(_account_cache),
+            "memory_usage_estimate": len(_account_cache) * 500  # Stima grezza in KB
+        }
+
+# Aggiungi un timer per pulire la cache periodicamente (ogni ora)
+def _setup_cache_cleanup_timer():
+    """Configura un timer per la pulizia periodica della cache"""
+    import threading
+    
+    def cleanup_task():
+        clear_account_cache()
+        logger.debug("Account cache cleaned up")
+        threading.Timer(3600, cleanup_task).start()  # 3600 secondi = 1 ora
+    
+    threading.Timer(3600, cleanup_task).start()
+
+# Avvia il timer di pulizia all'importazione del modulo
+_setup_cache_cleanup_timer()
