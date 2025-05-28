@@ -282,14 +282,17 @@ class VoteManager:
             
         except Exception as e:
             logger.error(f"Error getting post voters: {str(e)}")
-            return []
-
-    def calculate_optimal_vote_time(self, voters_data, buffer_minutes=0.2):
+            return []    
+          
+    def calculate_optimal_vote_time(self, voters_data, buffer_minutes=0.2, max_top_voters=8, consider_delayed_votes=True, min_vote_time=1.0):
         """Calcola il tempo ottimale per votare in base ai votanti importanti
         
         Args:
             voters_data (list): Lista di dati sui votanti con 'importance' e 'vote_delay_minutes'
             buffer_minutes (float): Minuti di anticipo rispetto al primo votante importante
+            max_top_voters (int): Numero massimo di votanti importanti da considerare
+            consider_delayed_votes (bool): Se considerare anche votanti che votano oltre il primo minuto
+            min_vote_time (float): Tempo minimo di voto in minuti, per evitare voti troppo precoci
             
         Returns:
             dict: Dizionario con 'optimal_time' (in minuti) e 'explanation'
@@ -298,13 +301,30 @@ class VoteManager:
             return {
                 'optimal_time': 5,  # Default se non ci sono dati
                 'explanation': 'Nessun dato sui votanti disponibile, usando il tempo predefinito di 5 minuti',
-                'vote_window': (4.5, 5.5)  # Finestra di voto predefinita
+                'vote_window': (4.5, 5.5),  # Finestra di voto predefinita
+                'voter_groups': {}
             }
-          # Ordina i votanti per valore del voto in STEEM (decrescente)
+              # Ordina i votanti per valore del voto in STEEM (decrescente)
         important_voters = sorted(voters_data, key=lambda x: x.get('steem_vote_value', 0) or 0, reverse=True)
+          # Calcola dinamicamente il numero di top voters da considerare in base al loro valore
+        # Conta quanti votanti hanno almeno 10 STEEM di valore
+        default_top_count = 3
+        high_value_voters = [v for v in important_voters if (v.get('steem_vote_value', 0) or 0) >= 10.0]
+        num_high_value = len(high_value_voters)
         
-        # Prendi i 3 votanti più importanti, se disponibili
-        top_voters = important_voters[:min(3, len(important_voters))]
+        # Se ci sono votanti con almeno 10 STEEM, allarga la considerazione per includere almeno questi
+        if num_high_value > 0:
+            # Usa max_top_voters ma assicurati di includere almeno tutti quelli con alto valore
+            effective_top_voters = max(num_high_value, min(max_top_voters, len(important_voters)))
+        else:
+            # Altrimenti usa solo il conteggio predefinito
+            effective_top_voters = default_top_count
+        
+        logger.debug(f"Trovati {num_high_value} votanti con valore ≥ 10 STEEM, "
+                     f"utilizzando {effective_top_voters} top voters su {len(important_voters)} totali")
+        
+        # Prendi un numero appropriato di votanti importanti, se disponibili
+        top_voters = important_voters[:min(effective_top_voters, len(important_voters))]
         
         # Calcola il valore totale in STEEM di questi votanti
         total_steem_value = sum(v.get('steem_vote_value', 0) or 0 for v in top_voters)
@@ -312,7 +332,7 @@ class VoteManager:
         # Usa il valore tradizionale dell'importanza come fallback se non ci sono valori STEEM
         if total_steem_value <= 0:
             important_voters = sorted(voters_data, key=lambda x: x.get('importance', 0), reverse=True)
-            top_voters = important_voters[:min(3, len(important_voters))]
+            top_voters = important_voters[:min(max_top_voters, len(important_voters))]
             total_importance = sum(v.get('importance', 0) for v in top_voters)
         else:
             total_importance = total_steem_value  # Usa il valore STEEM come importanza totale
@@ -321,51 +341,221 @@ class VoteManager:
             return {
                 'optimal_time': 5,  # Default in caso di importanza zero
                 'explanation': 'Importanza dei votanti troppo bassa, usando il tempo predefinito di 5 minuti',
-                'vote_window': (4.5, 5.5)
+                'vote_window': (4.5, 5.5),
+                'voter_groups': {}
             }
-          # Calcola il tempo medio ponderato di voto in base al valore STEEM
-        weighted_vote_time = 0
-        for voter in top_voters:
-            # Usa steem_vote_value se disponibile, altrimenti usa l'importanza tradizionale
-            voter_value = voter.get('steem_vote_value', 0) or voter.get('importance', 0)
-            delay_minutes = voter.get('vote_delay_minutes', 30)  # Default a 30 minuti se non specificato
-            weight = voter_value / total_importance
-            weighted_vote_time += delay_minutes * weight
             
-        # Trova il votante più importante (con più valore STEEM) e il suo tempo di voto
-        most_important_voter = top_voters[0]
-        most_important_time = most_important_voter.get('vote_delay_minutes', 30)
+        # Raggruppa i votanti per fasce temporali
+        immediate_voters = []   # voti entro il primo minuto
+        quick_voters = []       # voti entro i primi 5 minuti
+        delayed_voters = []     # voti oltre i 5 minuti
         
-        # Trova il votante importante che vota più presto
-        earliest_important_voter = min(top_voters, key=lambda x: x.get('vote_delay_minutes', 30))
-        earliest_vote_time = earliest_important_voter.get('vote_delay_minutes', 30)
+        # Calcola anche un punteggio combinato di importanza e velocità
+        voter_scores = []
         
-        # Calcola il tempo di voto ottimale - leggermente prima del votante importante più veloce
-        optimal_time = max(0.5, earliest_vote_time - buffer_minutes)
-          # Genera la spiegazione appropriata, indicando anche il valore in STEEM del votante
-        most_important_steem_value = most_important_voter.get('steem_vote_value', 0) or 0
-        earliest_steem_value = earliest_important_voter.get('steem_vote_value', 0) or 0
+        for voter in top_voters:
+            delay = voter.get('vote_delay_minutes', 30)
+            value = voter.get('steem_vote_value', 0) or voter.get('importance', 0)
+            
+            # Calcola uno score che favorisce votanti veloci con alto valore
+            # Formula: valore / (delay^0.7) - dà più peso al valore ma considera anche la velocità
+            speed_factor = max(1, delay ** 0.7)  # evita divisione per zero
+            combined_score = value / speed_factor
+            
+            voter_scores.append((voter, combined_score))
+            
+            # Raggruppa per fasce temporali
+            if delay <= 1:
+                immediate_voters.append(voter)
+            elif delay <= 5:
+                quick_voters.append(voter)
+            else:
+                delayed_voters.append(voter)
+                
+        # Ordina per punteggio combinato
+        voter_scores.sort(key=lambda x: x[1], reverse=True)
         
-        if earliest_important_voter['voter'] == most_important_voter['voter']:
-            explanation = f"Votare {buffer_minutes} minuti prima del votante più influente (@{most_important_voter.get('voter', 'sconosciuto')}, {most_important_steem_value:.3f} STEEM) che vota dopo {most_important_time:.1f} minuti"
+        # Estrai i migliori votanti secondo il punteggio combinato
+        best_balanced_voters = [v[0] for v in voter_scores[:min(3, len(voter_scores))]]
+        
+        # Calcola l'importanza totale per ciascun gruppo
+        immediate_importance = sum(v.get('steem_vote_value', 0) or v.get('importance', 0) for v in immediate_voters)
+        quick_importance = sum(v.get('steem_vote_value', 0) or v.get('importance', 0) for v in quick_voters)
+        delayed_importance = sum(v.get('steem_vote_value', 0) or v.get('importance', 0) for v in delayed_voters)
+        
+        # Variabili per la strategia di voto
+        optimal_time = 5.0  # Default
+        vote_window = (4.5, 5.5)
+        strategy_explanation = ""
+        
+        # Trova il votante più importante e il votante più veloce tra quelli importanti
+        if len(top_voters) > 0:
+            most_important_voter = top_voters[0]
+            most_important_time = most_important_voter.get('vote_delay_minutes', 30)
+            most_important_value = most_important_voter.get('steem_vote_value', 0) or most_important_voter.get('importance', 0)
+            
+            # Aggiorna l'ordinamento per trovare il votante più veloce tra quelli importanti (top 50%)
+            important_threshold = total_importance * 0.5 / len(top_voters)
+            significant_voters = [v for v in top_voters if (v.get('steem_vote_value', 0) or v.get('importance', 0)) >= important_threshold]
+            
+            if significant_voters:
+                earliest_important_voter = min(significant_voters, key=lambda x: x.get('vote_delay_minutes', 30))
+                earliest_vote_time = earliest_important_voter.get('vote_delay_minutes', 30)
+                earliest_value = earliest_important_voter.get('steem_vote_value', 0) or earliest_important_voter.get('importance', 0)
+            else:
+                # Fallback se non ci sono votanti significativi
+                earliest_important_voter = min(top_voters, key=lambda x: x.get('vote_delay_minutes', 30))
+                earliest_vote_time = earliest_important_voter.get('vote_delay_minutes', 30)
+                earliest_value = earliest_important_voter.get('steem_vote_value', 0) or earliest_important_voter.get('importance', 0)
+                
+            # Strategie di voto in base alla distribuzione dei votanti importanti
+            
+            # STRATEGIA 1: Votanti importanti nei primi minuti
+            if immediate_importance > 0:                # C'è almeno un votante importante nel primo minuto, vota prima di lui ma rispettando min_vote_time
+                target_voter = min(immediate_voters, key=lambda x: x.get('vote_delay_minutes', 1))
+                target_time = target_voter.get('vote_delay_minutes', 1)
+                calculated_time = max(0.5, target_time - buffer_minutes)
+                # Assicura che non votiamo prima del tempo minimo configurato
+                optimal_time = max(min_vote_time, calculated_time)
+                
+                if optimal_time > calculated_time:
+                    strategy_explanation = f"Ci sono votanti importanti nel primo minuto (valore: {immediate_importance:.3f} STEEM), ma attendiamo {min_vote_time} min. per policy"
+                else:
+                    strategy_explanation = f"Ci sono votanti importanti nel primo minuto (valore: {immediate_importance:.3f} STEEM)"
+                    
+                vote_window = (optimal_time - 0.1, optimal_time + 0.1)  # Finestra stretta per massima precisione
+                
+            # STRATEGIA 2: Votanti importanti entro i primi 5 minuti
+            elif quick_importance > 0 and (not consider_delayed_votes or delayed_importance < quick_importance * 2):                # Votanti nei primi 5 minuti sono significativi rispetto a quelli ritardati
+                target_voter = min(quick_voters, key=lambda x: x.get('vote_delay_minutes', 5))
+                target_time = target_voter.get('vote_delay_minutes', 5)
+                calculated_time = max(0.5, target_time - buffer_minutes)
+                optimal_time = max(min_vote_time, calculated_time)
+                
+                if optimal_time > calculated_time:
+                    strategy_explanation = f"Ci sono votanti significativi entro i primi 5 minuti (valore: {quick_importance:.3f} STEEM), ma attendiamo {min_vote_time} min. per policy"
+                else:
+                    strategy_explanation = f"Ci sono votanti significativi entro i primi 5 minuti (valore: {quick_importance:.3f} STEEM)"
+                
+                vote_window = (optimal_time - 0.2, optimal_time + 0.2)
+                
+            # STRATEGIA 3: Votanti molto importanti ma ritardati
+            elif consider_delayed_votes and delayed_importance > (immediate_importance + quick_importance) * 1.5:
+                # I votanti ritardati hanno un valore molto superiore
+                
+                # Trova il primo votante ritardato veramente importante (top 3)
+                important_delayed = sorted(delayed_voters, 
+                                          key=lambda x: x.get('steem_vote_value', 0) or x.get('importance', 0), 
+                                          reverse=True)[:min(3, len(delayed_voters))]
+                                          
+                if important_delayed:
+                    # Vota poco prima del votante ritardato più veloce tra i più importanti
+                    target_voter = min(important_delayed, key=lambda x: x.get('vote_delay_minutes', 30))
+                    target_time = target_voter.get('vote_delay_minutes', 30)
+                    target_value = target_voter.get('steem_vote_value', 0) or target_voter.get('importance', 0)
+                      # Se il target è davvero molto in ritardo, usiamo una strategia più conservativa
+                    if target_time > 15:
+                        calculated_time = max(1, target_time - 1.0)  # Buffer più grande per votanti molto ritardati
+                        optimal_time = max(min_vote_time, calculated_time)
+                        strategy_explanation = f"Anticipiamo di 1 minuto un votante molto importante ma ritardato (@{target_voter.get('voter', 'sconosciuto')}, {target_value:.3f} STEEM, delay: {target_time} min)"
+                    else:
+                        calculated_time = max(0.5, target_time - buffer_minutes)
+                        optimal_time = max(min_vote_time, calculated_time)
+                        strategy_explanation = f"Anticipiamo un votante importante (@{target_voter.get('voter', 'sconosciuto')}, {target_value:.3f} STEEM, delay: {target_time} min)"
+                        
+                    if optimal_time > calculated_time:
+                        strategy_explanation += f" (tempo minimo di voto impostato a {min_vote_time} min.)"
+                    
+                    vote_window = (optimal_time - 0.3, optimal_time + 0.3)
+                else:                    # Fallback alla strategia basata sul votante più veloce tra i top
+                    calculated_time = max(0.5, earliest_vote_time - buffer_minutes)
+                    optimal_time = max(min_vote_time, calculated_time)
+                    
+                    if optimal_time > calculated_time:
+                        strategy_explanation = f"Anticipiamo il votante più veloce tra i top (tempo minimo di voto: {min_vote_time} min.)"
+                    else:
+                        strategy_explanation = f"Anticipiamo il votante più veloce tra i top"
+                        
+                    vote_window = (optimal_time - 0.2, optimal_time + 0.2)
+            
+            # STRATEGIA 4: Nessuna delle precedenti - usa il miglior votante per rapporto valore/velocità
+            else:                
+                if best_balanced_voters:
+                    best_voter = best_balanced_voters[0]                    
+                    best_time = best_voter.get('vote_delay_minutes', 5)
+                    best_value = best_voter.get('steem_vote_value', 0) or best_voter.get('importance', 0)
+                    
+                    calculated_time = max(0.5, best_time - buffer_minutes)
+                    optimal_time = max(min_vote_time, calculated_time)
+                    
+                    if optimal_time > calculated_time:
+                        strategy_explanation = f"Anticipiamo il votante con miglior rapporto valore/velocità (@{best_voter.get('voter', 'sconosciuto')}, delay: {best_time} min) rispettando il tempo minimo di {min_vote_time} min."
+                    else:
+                        strategy_explanation = f"Anticipiamo il votante con miglior rapporto valore/velocità (@{best_voter.get('voter', 'sconosciuto')}, delay: {best_time} min)"
+                    
+                    vote_window = (optimal_time - 0.2, optimal_time + 0.2)
+                else:
+                    # Fallback assoluto - usa il votante più importante
+                    calculated_time = max(0.5, most_important_time - buffer_minutes)
+                    optimal_time = max(min_vote_time, calculated_time)
+                    
+                    if optimal_time > calculated_time:
+                        strategy_explanation = f"Anticipiamo il votante più importante (@{most_important_voter.get('voter')}, {most_important_value:.3f} STEEM) rispettando il tempo minimo di {min_vote_time} min."
+                    else:
+                        strategy_explanation = f"Anticipiamo il votante più importante (@{most_important_voter.get('voter')}, {most_important_value:.3f} STEEM)"
+                    
+                    vote_window = (optimal_time - 0.2, optimal_time + 0.2)
+            
+            # Genera una spiegazione più dettagliata
+            detailed_explanation = strategy_explanation + "\n"
+            
+            # Aggiunge dettagli sui votanti più importanti
+            if len(top_voters) > 0:
+                top_3_voters = top_voters[:min(3, len(top_voters))]
+                voter_details = [f"@{v.get('voter', 'sconosciuto')} (valore: {v.get('steem_vote_value', 0) or v.get('importance', 0):.3f} STEEM, dopo {v.get('vote_delay_minutes', 0):.1f} min)" 
+                                for v in top_3_voters]
+                detailed_explanation += f"Top votanti per valore: {', '.join(voter_details)}"
+              # Aggiungi nota sul tempo minimo di voto se applicabile
+            if min_vote_time > 0.5 and optimal_time == min_vote_time:
+                detailed_explanation += f"\n(Tempo di voto limitato a minimo {min_vote_time} minuti come da configurazione)"
+        
+            # Prepara i gruppi di votanti per l'output
+            voter_groups = {
+                "immediate": [v.get('voter') for v in immediate_voters],
+                "quick": [v.get('voter') for v in quick_voters],
+                "delayed": [v.get('voter') for v in delayed_voters],
+                "best_balanced": [v.get('voter') for v in best_balanced_voters]
+            }
+              # Formatta i valori di importance per i gruppi
+            group_importance = {
+                "immediate": round(immediate_importance, 3),
+                "quick": round(quick_importance, 3),
+                "delayed": round(delayed_importance, 3)
+            }
+            
+            # Aggiungi informazione sui votanti di alto valore
+            high_value_count = len([v for v in top_voters if (v.get('steem_vote_value', 0) or 0) >= 10.0])
+            high_value_info = f"{high_value_count} votanti con valore ≥ 10 STEEM" if high_value_count > 0 else "Nessun votante con alto valore"
+            
+            return {
+                'optimal_time': round(optimal_time, 1),
+                'explanation': detailed_explanation,
+                'strategy': strategy_explanation,
+                'top_voters': [v.get('voter', 'sconosciuto') for v in top_voters[:min(5, len(top_voters))]],
+                'vote_window': (round(vote_window[0], 1), round(vote_window[1], 1)),
+                'voter_groups': voter_groups,
+                'group_importance': group_importance,
+                'high_value_info': high_value_info,
+                'high_value_count': high_value_count
+            }
         else:
-            explanation = f"Votare {buffer_minutes} minuti prima del primo votante influente (@{earliest_important_voter.get('voter', 'sconosciuto')}, {earliest_steem_value:.3f} STEEM) che vota dopo {earliest_vote_time:.1f} minuti"
-        
-        # Finestra stretta per massimizzare la precisione
-        vote_window = (optimal_time - 0.2, optimal_time + 0.2)
-        
-        # Evita tempi di voto troppo precoci
-        if optimal_time < 0.5:
-            optimal_time = 0.5
-            explanation += " (limitato a un minimo di 0.5 minuti per evitare vote spamming)"
-            vote_window = (0.5, 1.0)
-        
-        return {
-            'optimal_time': round(optimal_time, 1),
-            'explanation': explanation,
-            'top_voters': [v.get('voter', 'sconosciuto') for v in top_voters],
-            'vote_window': (round(vote_window[0], 1), round(vote_window[1], 1))
-        }
+            # Nessun votante significativo trovato
+            return {
+                'optimal_time': 5,
+                'explanation': 'Nessun votante significativo trovato, usando il tempo predefinito di 5 minuti',
+                'vote_window': (4.5, 5.5),
+                'voter_groups': {}
+            }
     
     @lru_cache(maxsize=128)
     def calculate_vote_value_cached(self, vote_percent, effective_vests=None, voting_power=9200):
