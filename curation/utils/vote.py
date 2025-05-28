@@ -175,22 +175,6 @@ class VoteManager:
                     if processed_voters > max_detailed_voters and vote_rshares < 1e7:  # 10M rshares come soglia
                         continue
                     
-                    # # Estrai informazioni dirette dal voto quando disponibili
-                    # vote_percent = float(vote_data.get('percent', 0))
-                    
-                    # # Determina quando è avvenuto il voto
-                    # vote_time = vote_data.get('time')
-                    # if isinstance(vote_time, str):
-                    #     vote_time = datetime.strptime(vote_time, '%Y-%m-%dT%H:%M:%S')
-                    #     if vote_time.tzinfo is None:
-                    #         vote_time = vote_time.replace(tzinfo=timezone.utc)
-                    
-                    # Se non abbiamo il timestamp nel voto base, usa il timestamp del post o il timestamp corrente
-                    # if not vote_time:
-                    #     if 'last_update' in vote_data:
-                    #         vote_time = datetime.strptime(vote_data['last_update'], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=timezone.utc)
-                    #     else:
-                            # Per votanti top (importanti), vale la pena cercare il tempo preciso
                     if processed_voters <= max_detailed_voters:
                         try:
                             vote = Vote(voter_name, post_url, blockchain_instance=blockchain_instance)
