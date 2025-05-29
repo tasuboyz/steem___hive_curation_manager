@@ -283,8 +283,8 @@ class VoteManager:
         except Exception as e:
             logger.error(f"Error getting post voters: {str(e)}")
             return []    
-          
-    def calculate_optimal_vote_time(self, voters_data, buffer_minutes=0.2, max_top_voters=8, consider_delayed_votes=True, min_vote_time=1.0):
+        
+    def calculate_optimal_vote_time(self, voters_data, buffer_minutes=0.2, max_top_voters=8, consider_delayed_votes=True, min_vote_time=1.0, curator_username=None):
         """Calcola il tempo ottimale per votare in base ai votanti importanti
         
         Args:
@@ -293,10 +293,25 @@ class VoteManager:
             max_top_voters (int): Numero massimo di votanti importanti da considerare
             consider_delayed_votes (bool): Se considerare anche votanti che votano oltre il primo minuto
             min_vote_time (float): Tempo minimo di voto in minuti, per evitare voti troppo precoci
+            curator_username (str): Nome utente del curatore da escludere dal calcolo
             
         Returns:
             dict: Dizionario con 'optimal_time' (in minuti) e 'explanation'
         """
+        # Ottieni il nome del curatore se non è fornito
+        if not curator_username and hasattr(self, 'blockchain_connector'):
+            try:
+                platform = 'steem'  # Default, ma sarà lo stesso algoritmo per entrambe le piattaforme
+                curator_info = self.blockchain_connector.get_curator_info(platform)
+                curator_username = (curator_info.get('username') or '').lower()
+            except Exception as e:
+                logger.debug(f"Non è stato possibile ottenere il nome del curatore: {e}")
+                curator_username = None
+                
+        # Filtra il curatore dai dati dei votanti se presente
+        if curator_username:
+            voters_data = [v for v in voters_data if v.get('voter', '').lower() != curator_username.lower()]
+                
         if not voters_data:
             return {
                 'optimal_time': 5,  # Default se non ci sono dati
