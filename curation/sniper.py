@@ -133,7 +133,7 @@ class SocialMediaPublisher:
                         if post_permlink:
                             post_voters = self.vote.get_post_voters(f"@{author}/{post_permlink}", min_importance=0.1)
                             all_voters_data.extend(post_voters)
-                    optimal_vote_info = self.beem.calculate_optimal_vote_time(all_voters_data)
+                    optimal_vote_info = self.vote.calculate_optimal_vote_time(all_voters_data)
                     vote_delay = optimal_vote_info['optimal_time']
                     vote_explanation = optimal_vote_info['explanation'] + " (basato su post precedenti)"
                     telegram_message = (
