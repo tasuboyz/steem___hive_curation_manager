@@ -125,7 +125,7 @@ class SocialMediaPublisher:
 
             # Calcolo tempo di voto
             if use_optimal_time:
-                previous_posts = self.beem.get_previous_author_posts(author, platform, limit=5)
+                previous_posts = self.beem.get_previous_author_posts(author, platform, limit=1)
                 if previous_posts:
                     all_voters_data = []
                     for post in previous_posts:
