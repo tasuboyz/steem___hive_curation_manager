@@ -361,10 +361,9 @@ class VoteManager:
                 'vote_window': (4.5, 5.5),
                 'voter_groups': {}
             }
-        
-        # NUOVA LOGICA: Trova il tempo del top voter più veloce e votalo prima
-        # Ordinamento dei top_voters per tempo di voto (crescente)
-        top_voters_by_time = sorted(top_voters, key=lambda x: x.get('vote_delay_minutes', 30))
+          # NUOVA LOGICA: Trova il tempo del top voter più veloce e votalo prima
+        # Ordinamento dei top_voters per tempo di voto (crescente), gestendo correttamente valori None
+        top_voters_by_time = sorted(top_voters, key=lambda x: x.get('vote_delay_minutes') if x.get('vote_delay_minutes') is not None else 30)
         
         # Trova il primo votante tra i top_voters
         if top_voters_by_time:

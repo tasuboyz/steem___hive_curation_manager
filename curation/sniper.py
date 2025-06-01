@@ -17,13 +17,23 @@ class SocialMediaPublisher:
         # Inizializza le impostazioni per i test
         self.is_test_mode = True
         self.vote = VoteManager()
+        
+        # Inizializza l'istanza di blockchain
+        self.beem = Blockchain(app=self.app)
+        self.published_links = {"steem": set(), "hive": set()}
+        self.running = True
+        
         # Carica la modalità test dal database se possibile
         try:
-            self.is_test_mode = SettingsService.is_test_mode(app)
-            # self.post_voters = self.beem.get_post_voters(f"@miftahulrizky/winners-announcement-of-the-steemit-challenge-season-24-week-4-places-of-worship", min_importance=0.1)
-            # logger.debug(f"Post Voters: {self.post_voters}")
-        except:
-            # In caso di errore, usa il valore predefinito
+            if self.app:
+                with self.app.app_context():
+                    self.is_test_mode = SettingsService.is_test_mode(app)
+            else:
+                self.is_test_mode = SettingsService.is_test_mode(app)
+            logger.info(f"Modalità test: {self.is_test_mode}")
+        except Exception as e:
+            # In caso di errore, usa il valore predefinito e logga l'errore
+            logger.error(f"Errore nel caricamento della modalità test: {str(e)}. Usando il valore predefinito: True")
             self.is_test_mode = True
             
         # Inizializza l'istanza di blockchain
@@ -73,9 +83,26 @@ class SocialMediaPublisher:
     
     def handle_voting(self, platform, post_link):
         """Gestisce il processo di voto per un post."""
-        user_data = UserService.get_user_for_post(post_link, self.app)
-        admin_ids = SettingsService.get_setting('admin_ids', default='', app=self.app)
-        bot_token = SettingsService.get_setting('bot_token', default='', app=self.app)
+        # Ottieni informazioni dall'utente e dalle impostazioni con context handling
+        try:
+            user_data = None
+            admin_ids = ''
+            bot_token = ''
+            
+            # Usa app_context se self.app è disponibile
+            if self.app:
+                with self.app.app_context():
+                    user_data = UserService.get_user_for_post(post_link, self.app)
+                    admin_ids = SettingsService.get_setting('admin_ids', default='', app=self.app)
+                    bot_token = SettingsService.get_setting('bot_token', default='', app=self.app)
+            else:
+                # Altrimenti prova senza context
+                user_data = UserService.get_user_for_post(post_link, self.app)
+                admin_ids = SettingsService.get_setting('admin_ids', default='', app=self.app)
+                bot_token = SettingsService.get_setting('bot_token', default='', app=self.app)
+        except Exception as e:
+            logger.error(f"Errore durante il recupero delle impostazioni: {str(e)}")
+            return
 
         if not user_data:
             logger.debug(f"Nessun utente trovato per il post {post_link}")

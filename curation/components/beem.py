@@ -714,27 +714,36 @@ class Blockchain:
         except Exception as e:
             logger.error(f"Errore nel recupero dei post precedenti di @{author}: {str(e)}")
             return []
-    
+            
     def get_curator_info(self, platform):
         """Ottiene le informazioni del curatore dalla configurazione o dal database"""
-        if SettingsService:
-            # Ottieni le informazioni dal servizio di impostazioni
-            curator_info = SettingsService.get_curator_info(platform, app=self.app)
-            return curator_info
+        try:
+            if SettingsService:
+                # Ottieni le informazioni dal servizio di impostazioni
+                # Se self.app è disponibile, usa il suo contesto di applicazione
+                if self.app:
+                    with self.app.app_context():
+                        curator_info = SettingsService.get_curator_info(platform, app=self.app)
+                        return curator_info
+                else:
+                    curator_info = SettingsService.get_curator_info(platform, app=None)
+                    return curator_info
+        except Exception as e:
+            logger.debug(f"Fallback alla configurazione per {platform}: {str(e)}")
+            
+        # Fallback ai valori di configurazione
+        from .config import steem_curator, steem_curator_posting_key, steem_active_key, hive_curator, hive_curator_posting_key
+        if platform == 'steem':
+            return {
+                'username': steem_curator,
+                'posting_key': steem_curator_posting_key,
+                'active_key': steem_active_key
+            }
         else:
-            # Fallback ai valori di configurazione
-            from .config import steem_curator, steem_curator_posting_key, steem_active_key, hive_curator, hive_curator_posting_key
-            if platform == 'steem':
-                return {
-                    'username': steem_curator,
-                    'posting_key': steem_curator_posting_key,
-                    'active_key': steem_active_key
-                }
-            else:
-                return {
-                    'username': hive_curator,
-                    'posting_key': hive_curator_posting_key
-                }
+            return {
+                'username': hive_curator,
+                'posting_key': hive_curator_posting_key
+            }
     
     def get_votes_today(self, curator, author, platform):
         """
@@ -763,16 +772,31 @@ class Blockchain:
 
             now = datetime.now(timezone.utc)
             since = now - timedelta(days=1)
-            votes = 0
-
-            # Scorri la history dei voti del curatore
+            votes = 0            # Scorri la history dei voti del curatore
             for vote in account.get_account_votes():
                 # vote['author'], vote['time']
                 vote_time = vote.get('time')
+                # Gestisce diversi formati di data o None
+                if vote_time is None:
+                    continue  # Salta questo voto se non c'è timestamp
+                    
                 if isinstance(vote_time, str):
-                    vote_time = datetime.strptime(vote_time, '%Y-%m-%dT%H:%M:%S')
+                    try:
+                        vote_time = datetime.strptime(vote_time, '%Y-%m-%dT%H:%M:%S')
+                        vote_time = vote_time.replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        # Prova un formato alternativo se il primo fallisce
+                        try:
+                            vote_time = datetime.fromisoformat(vote_time.replace('Z', '+00:00'))
+                        except (ValueError, AttributeError):
+                            logger.debug(f"Impossibile analizzare il timestamp: {vote_time}")
+                            continue  # Salta questo voto
+                
+                # Assicurati che vote_time abbia un timezone
+                if vote_time.tzinfo is None:
                     vote_time = vote_time.replace(tzinfo=timezone.utc)
-                if vote['author'] == author and vote_time > since:
+                    
+                if vote.get('author') == author and vote_time > since:
                     votes += 1
             return votes
         except Exception as e:

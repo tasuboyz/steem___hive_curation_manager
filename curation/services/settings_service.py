@@ -29,7 +29,18 @@ class SettingsService:
             return None
         except RuntimeError:
             logger.error("Nessun contesto applicazione disponibile e nessun app fornito")
-            raise
+            # Importa Flask per una soluzione di fallback
+            try:
+                from flask import Flask
+                from curation.components.factory import create_app
+                # Crea un'app temporanea se possibile
+                temp_app = create_app()
+                return temp_app.app_context()
+            except Exception as e:
+                logger.error(f"Impossibile creare un'app temporanea: {e}")
+                # Invece di sollevare un'eccezione, restituiamo None e lasciamo
+                # che il chiamante gestisca il caso in cui il contesto non è disponibile
+                return None
     
     @staticmethod
     def initialize_default_settings(app=None):
