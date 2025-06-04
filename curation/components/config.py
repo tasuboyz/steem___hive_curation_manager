@@ -11,9 +11,9 @@ TEST = True
 
 node_list = {
         "steem": [
+            "https://api.moecki.online",
             "https://api.steemit.com",
-            "https://api.justyy.com",
-            "https://api.moecki.online"
+            "https://api.justyy.com"
         ],
         "hive": [
             "https://api.deathwing.me",

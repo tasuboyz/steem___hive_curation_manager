@@ -259,13 +259,15 @@ if __name__ == '__main__':
     # In Flask debug mode, the reloader will spawn a child process, we only want to initialize
     # services in the main process to avoid duplications
     is_main_process = not debug_mode or os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
+
+    blockchain_connector.get_votes_today("tasuboyz", "cjsdns", "steem")
     
     if is_main_process:
         logger.info("Inizializzando i servizi nel processo principale...")
         init_services(app)
     else:
         logger.info("Processo secondario, saltando l'inizializzazione dei servizi")
-    
+        
     # Avvia l'applicazione
     try:
         app.run(debug=debug_mode, port=8089, host='0.0.0.0', use_reloader=debug_mode)
