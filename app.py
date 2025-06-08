@@ -6,13 +6,29 @@ from curation.services.user_service import UserService
 from curation.services.settings_service import SettingsService
 from curation.components.beem import Blockchain
 from curation.utils.vote import VoteManager
+from curation.ml.ml_integration import MLEnhancedVoteManager
+from curation.ml.routes import ml_bp
 import signal
 import sys
 import os
 
 app = create_app()
+
+# Register ML blueprint
+app.register_blueprint(ml_bp, url_prefix='/api/ml')
+
 blockchain_connector = Blockchain(app=app)  # Istanza globale per la classe Blockchain
-vote_manager = VoteManager()
+
+# Initialize ML-enhanced vote manager
+try:
+    # First create a standard vote manager
+    base_vote_manager = VoteManager()
+    # Then wrap it with ML capabilities
+    vote_manager = MLEnhancedVoteManager()
+    logger.info("ML-enhanced vote manager initialized successfully")
+except Exception as e:
+    logger.warning(f"Failed to initialize ML-enhanced vote manager, falling back to standard: {e}")
+    vote_manager = VoteManager()
 
 # Definire le route
 @app.route('/')
@@ -22,6 +38,10 @@ def home():
 @app.route('/settings')
 def settings():
     return render_template('settings.html')
+
+@app.route('/ml-dashboard')
+def ml_dashboard():
+    return render_template('ml_dashboard.html')
 
 # Nuovo endpoint per ottenere i votanti di un post
 @app.route('/api/post_voters', methods=['GET'])

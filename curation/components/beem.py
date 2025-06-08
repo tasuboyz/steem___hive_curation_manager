@@ -809,3 +809,90 @@ class Blockchain:
         except Exception as e:
             logger.error(f"Errore in get_votes_today: {e}")
             return 0
+    
+    def get_user_votes_by_days_back(self, username, days_back=7):
+        """
+        Restituisce la lista dei curation rewards con informazioni sul voto corrispondente
+        negli ultimi days_back giorni.
+        """
+        for node_url in self.node_urls.get('steem'):
+            if not self.ping_server(node_url):
+                logger.error(f"Impossibile raggiungere il server: {node_url}")
+                continue
+        
+            steem = Steem(node=node_url)
+            account = Account(username, blockchain_instance=steem)
+            cutoff_date = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(days=days_back)
+            
+            # First pass: collect all relevant operations
+            recent_votes = {}
+            curation_rewards = []
+            
+            for op in account.history_reverse(use_block_num=False):
+                # Parse and validate timestamp
+                op_timestamp = op.get('timestamp')
+                if isinstance(op_timestamp, str):
+                    try:
+                        op_timestamp = datetime.strptime(op_timestamp, '%Y-%m-%dT%H:%M:%S').replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        try:
+                            op_timestamp = datetime.fromisoformat(op_timestamp.replace('Z', '+00:00'))
+                        except Exception:
+                            op_timestamp = None
+                
+                # Skip older operations early
+                if op_timestamp and op_timestamp < cutoff_date:
+                    # Once we hit operations older than our cutoff, we can stop
+                    break
+                    
+                # Collect vote operations
+                if op.get('type') == 'vote' and op.get('voter') == username:
+                    vote_key = f"{op.get('author')}/{op.get('permlink')}"
+                    recent_votes[vote_key] = op
+                
+                # Collect curation rewards
+                elif op.get('type') == 'curation_reward':
+                    if op_timestamp:
+                        curation_rewards.append(op)
+            
+            # Second pass: match curation rewards with votes
+            combined_operations = []
+            for reward in curation_rewards:
+                comment_author = reward.get('comment_author')
+                comment_permlink = reward.get('comment_permlink')
+                vote_key = f"{comment_author}/{comment_permlink}"
+                
+                # Create combined operation
+                combined_op = reward.copy()
+                
+                # Try to add vote info if available
+                if vote_key in recent_votes:
+                    vote_info = recent_votes[vote_key]
+                    combined_op['vote_info'] = vote_info
+                    
+                    # Use vote timestamp instead of reward timestamp for more accurate timing analysis
+                    if 'timestamp' in vote_info:
+                        combined_op['timestamp'] = vote_info['timestamp']
+                
+                combined_operations.append(combined_op)
+            
+            return combined_operations
+        
+    def vesting_shares_to_steem(self, vesting_shares):
+        """
+        Converti le vesting shares in STEEM.
+        
+        Args:
+            vesting_shares (float): Quantità di vesting shares da convertire
+            
+        Returns:
+            float: Valore in STEEM
+        """
+        for node_url in self.node_urls.get('steem'):
+            if not self.ping_server(node_url):
+                logger.error(f"Impossibile raggiungere il server: {node_url}")
+                continue
+
+        steem = Steem(node=node_url)
+        reward_fund = steem.vests_to_sp(vesting_shares)
+        return reward_fund

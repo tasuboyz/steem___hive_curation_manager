@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">    <title>ML Dashboard - Curation Manager</title>
+    <link rel="icon" href="{{ url_for('static', filename='images/favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.ico') }}" type="image/x-icon">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/header.css') }}">
+    <style>
+        .ml-dashboard {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .ml-section {
+            background: var(--card-bg);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .ml-status {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .status-card {
+            background: var(--hover-bg);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .status-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+        
+        .status-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 5px;
+        }
+        
+        .ml-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .slider {
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--border-color);
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            cursor: pointer;
+        }
+        
+        .comparison-section {
+            margin-top: 20px;
+        }
+        
+        .comparison-input {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .comparison-input input {
+            flex: 1;
+        }
+        
+        .comparison-results {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 15px;
+        }
+        
+        .prediction-card {
+            background: var(--hover-bg);
+            padding: 15px;
+            border-radius: 8px;
+        }
+        
+        .prediction-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: var(--primary-color);
+        }
+        
+        .training-section {
+            margin-top: 20px;
+        }
+        
+        .training-form {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 15px;
+            align-items: end;
+        }
+        
+        .training-progress {
+            margin-top: 15px;
+            display: none;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: var(--border-color);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: var(--primary-color);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .feature-importance {
+            margin-top: 20px;
+        }
+        
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .feature-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .feature-bar {
+            flex: 1;
+            height: 8px;
+            background: var(--border-color);
+            margin: 0 10px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .feature-fill {
+            height: 100%;
+            background: var(--accent-color);
+            transition: width 0.3s ease;
+        }
+        
+        .error-message {
+            color: #e74c3c;
+            background: rgba(231, 76, 60, 0.1);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        .success-message {
+            color: #27ae60;
+            background: rgba(39, 174, 96, 0.1);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>    <div class="ml-dashboard">
+        <header>
+            <div class="header-content">
+                <h1><i class="fas fa-brain"></i> Machine Learning Dashboard</h1>
+                <div class="navigation">
+                    <a href="/" class="nav-btn"><i class="fas fa-home"></i> Home</a>
+                    <a href="/settings" class="nav-btn"><i class="fas fa-cog"></i> Settings</a>
+                </div>
+            </div>
+        </header>
+        
+        <!-- ML Status Section -->
+        <div class="ml-section">
+            <h2>Model Status</h2>
+            <div class="ml-status" id="mlStatus">
+                <div class="status-card">
+                    <div class="status-value" id="mlEnabled">-</div>
+                    <div class="status-label">ML Enabled</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-value" id="modelType">-</div>
+                    <div class="status-label">Model Type</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-value" id="timingTrained">-</div>
+                    <div class="status-label">Timing Model</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-value" id="rewardTrained">-</div>
+                    <div class="status-label">Reward Model</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ML Settings Section -->
+        <div class="ml-section">
+            <h2>Settings</h2>
+            <div class="ml-controls">
+                <div class="control-group">
+                    <label>
+                        <input type="checkbox" id="enableML"> Enable ML Predictions
+                    </label>
+                </div>
+                
+                <div class="control-group">
+                    <label for="mlWeight">ML Weight (vs Traditional):</label>
+                    <div class="slider-container">
+                        <span>0</span>
+                        <input type="range" id="mlWeight" class="slider" min="0" max="1" step="0.1" value="0.7">
+                        <span>1</span>
+                        <span id="mlWeightValue">0.7</span>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <label for="minConfidence">Minimum Confidence:</label>
+                    <div class="slider-container">
+                        <span>0</span>
+                        <input type="range" id="minConfidence" class="slider" min="0" max="1" step="0.05" value="0.6">
+                        <span>1</span>
+                        <span id="minConfidenceValue">0.6</span>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <button onclick="saveSettings()" class="btn btn-primary">Save Settings</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Training Section -->
+        <div class="ml-section">
+            <h2>Model Training</h2>
+            <div class="training-form">
+                <div class="control-group">
+                    <label for="trainingUsers">Training Users (comma-separated):</label>
+                    <input type="text" id="trainingUsers" 
+                           placeholder="curie, ocd, cervantes, blocktrades, acidyo" 
+                           value="curie, ocd, cervantes, blocktrades, acidyo">
+                </div>
+                
+                <div class="control-group">
+                    <label for="daysBack">Days Back:</label>
+                    <input type="number" id="daysBack" value="30" min="7" max="90">
+                </div>
+                
+                <div class="control-group">
+                    <button onclick="trainModel()" class="btn btn-primary">Train Model</button>
+                </div>
+            </div>
+            
+            <div class="training-progress" id="trainingProgress">
+                <h3>Training in Progress...</h3>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div id="trainingStatus">Initializing...</div>
+            </div>
+        </div>
+        
+        <!-- Prediction Comparison Section -->
+        <div class="ml-section">
+            <h2>Prediction Comparison</h2>
+            <div class="comparison-input">
+                <input type="text" id="postUrl" placeholder="Enter post URL (e.g., @author/permlink)">
+                <button onclick="comparePredictions()" class="btn btn-secondary">Compare</button>
+            </div>
+            
+            <div class="comparison-results" id="comparisonResults" style="display: none;">
+                <div class="prediction-card">
+                    <div class="prediction-title">Traditional Algorithm</div>
+                    <div id="traditionalResult">-</div>
+                </div>
+                
+                <div class="prediction-card">
+                    <div class="prediction-title">ML Prediction</div>
+                    <div id="mlResult">-</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Feature Importance Section -->
+        <div class="ml-section">
+            <h2>Feature Importance</h2>
+            <div class="feature-importance" id="featureImportance">
+                <p>Train a model to see feature importance analysis.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mlData = {};
+        
+        // Load initial data
+        document.addEventListener('DOMContentLoaded', function() {
+            loadMLStatus();
+            loadMLSettings();
+            loadFeatureImportance();
+            
+            // Setup slider value updates
+            document.getElementById('mlWeight').addEventListener('input', function() {
+                document.getElementById('mlWeightValue').textContent = this.value;
+            });
+            
+            document.getElementById('minConfidence').addEventListener('input', function() {
+                document.getElementById('minConfidenceValue').textContent = this.value;
+            });
+        });
+        
+        async function loadMLStatus() {
+            try {
+                const response = await fetch('/api/ml/status');
+                const result = await response.json();
+                
+                if (result.success) {
+                    mlData = result.data;
+                    updateStatusDisplay();
+                } else {
+                    showError('Failed to load ML status: ' + result.error);
+                }
+            } catch (error) {
+                showError('Error loading ML status: ' + error.message);
+            }
+        }
+        
+        function updateStatusDisplay() {
+            document.getElementById('mlEnabled').textContent = mlData.ml_enabled ? 'YES' : 'NO';
+            document.getElementById('modelType').textContent = mlData.model_type || '-';
+            document.getElementById('timingTrained').textContent = mlData.timing_model_trained ? 'YES' : 'NO';
+            document.getElementById('rewardTrained').textContent = mlData.reward_model_trained ? 'YES' : 'NO';
+        }
+        
+        async function loadMLSettings() {
+            try {
+                const response = await fetch('/api/ml/settings');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const settings = result.data;
+                    document.getElementById('enableML').checked = settings.ml_enabled;
+                    document.getElementById('mlWeight').value = settings.ml_weight;
+                    document.getElementById('mlWeightValue').textContent = settings.ml_weight;
+                    document.getElementById('minConfidence').value = settings.ml_min_confidence;
+                    document.getElementById('minConfidenceValue').textContent = settings.ml_min_confidence;
+                }
+            } catch (error) {
+                showError('Error loading ML settings: ' + error.message);
+            }
+        }
+        
+        async function saveSettings() {
+            try {
+                const settings = {
+                    ml_enabled: document.getElementById('enableML').checked,
+                    ml_weight: parseFloat(document.getElementById('mlWeight').value),
+                    ml_min_confidence: parseFloat(document.getElementById('minConfidence').value)
+                };
+                
+                const response = await fetch('/api/ml/settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(settings)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showSuccess('Settings saved successfully!');
+                } else {
+                    showError('Failed to save settings: ' + result.error);
+                }
+            } catch (error) {
+                showError('Error saving settings: ' + error.message);
+            }
+        }
+        
+        async function trainModel() {
+            try {
+                const usersText = document.getElementById('trainingUsers').value;
+                const daysBack = parseInt(document.getElementById('daysBack').value);
+                
+                const usernames = usersText.split(',').map(u => u.trim()).filter(u => u);
+                
+                if (usernames.length === 0) {
+                    showError('Please provide at least one username for training');
+                    return;
+                }
+                
+                // Show progress
+                document.getElementById('trainingProgress').style.display = 'block';
+                updateTrainingProgress(10, 'Collecting training data...');
+                
+                const response = await fetch('/api/ml/train', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        usernames: usernames,
+                        days_back: daysBack
+                    })
+                });
+                
+                updateTrainingProgress(50, 'Training models...');
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    updateTrainingProgress(100, 'Training completed!');
+                    setTimeout(() => {
+                        document.getElementById('trainingProgress').style.display = 'none';
+                        showSuccess(`Training completed! Timing RMSE: ${result.data.timing_cv_score?.toFixed(3) || 'N/A'}`);
+                        loadMLStatus(); // Refresh status
+                        loadFeatureImportance(); // Refresh feature importance
+                    }, 2000);
+                } else {
+                    updateTrainingProgress(0, 'Training failed');
+                    showError('Training failed: ' + result.error);
+                    setTimeout(() => {
+                        document.getElementById('trainingProgress').style.display = 'none';
+                    }, 2000);
+                }
+            } catch (error) {
+                updateTrainingProgress(0, 'Error occurred');
+                showError('Error training model: ' + error.message);
+                setTimeout(() => {
+                    document.getElementById('trainingProgress').style.display = 'none';
+                }, 2000);
+            }
+        }
+        
+        function updateTrainingProgress(percent, status) {
+            document.getElementById('progressFill').style.width = percent + '%';
+            document.getElementById('trainingStatus').textContent = status;
+        }
+        
+        async function comparePredictions() {
+            try {
+                const postUrl = document.getElementById('postUrl').value.trim();
+                
+                if (!postUrl) {
+                    showError('Please enter a post URL');
+                    return;
+                }
+                
+                const response = await fetch('/api/ml/predict/compare', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        post_url: postUrl
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success && result.data.comparison_valid) {
+                    const data = result.data;
+                    document.getElementById('traditionalResult').innerHTML = `
+                        <strong>${data.traditional_timing.toFixed(1)} minutes</strong><br>
+                        <small>Traditional algorithm prediction</small>
+                    `;
+                    
+                    document.getElementById('mlResult').innerHTML = `
+                        <strong>${data.ml_timing.toFixed(1)} minutes</strong><br>
+                        <small>ML prediction (confidence: ${(data.ml_confidence * 100).toFixed(1)}%)</small><br>
+                        <small>Expected reward: ${data.expected_reward.toFixed(4)} STEEM</small>
+                    `;
+                    
+                    document.getElementById('comparisonResults').style.display = 'grid';
+                } else {
+                    showError('Failed to compare predictions: ' + (result.error || result.data?.error || 'Unknown error'));
+                }
+            } catch (error) {
+                showError('Error comparing predictions: ' + error.message);
+            }
+        }
+        
+        async function loadFeatureImportance() {
+            try {
+                const response = await fetch('/api/ml/features/importance');
+                const result = await response.json();
+                
+                if (result.success && result.data.timing) {
+                    displayFeatureImportance(result.data.timing);
+                } else {
+                    document.getElementById('featureImportance').innerHTML = 
+                        '<p>Train a model to see feature importance analysis.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading feature importance:', error);
+            }
+        }
+        
+        function displayFeatureImportance(importance) {
+            const sorted = Object.entries(importance)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10); // Top 10 features
+            
+            let html = '<ul class="feature-list">';
+            sorted.forEach(([feature, value]) => {
+                const percentage = (value * 100).toFixed(1);
+                html += `
+                    <li class="feature-item">
+                        <span>${feature}</span>
+                        <div class="feature-bar">
+                            <div class="feature-fill" style="width: ${percentage}%"></div>
+                        </div>
+                        <span>${percentage}%</span>
+                    </li>
+                `;
+            });
+            html += '</ul>';
+            
+            document.getElementById('featureImportance').innerHTML = html;
+        }
+        
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = message;
+            document.querySelector('.ml-dashboard').prepend(errorDiv);
+            
+            setTimeout(() => errorDiv.remove(), 5000);
+        }
+        
+        function showSuccess(message) {
+            const successDiv = document.createElement('div');
+            successDiv.className = 'success-message';
+            successDiv.textContent = message;
+            document.querySelector('.ml-dashboard').prepend(successDiv);
+            
+            setTimeout(() => successDiv.remove(), 5000);
+        }
+    </script>
+</body>
+</html>
