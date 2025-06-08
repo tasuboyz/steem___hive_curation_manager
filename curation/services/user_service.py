@@ -109,17 +109,25 @@ class UserService:
     
     @staticmethod
     def add_user(user_data, app=None):
-        """Aggiunge un nuovo utente al database"""
+        """Aggiunge un nuovo utente al database. Se esiste già, non lo aggiunge e logga l'evento."""
         try:
             ctx = UserService._ensure_app_context(app)
             if ctx:
                 with ctx:
+                    existing = User.query.filter_by(username=user_data['username']).first()
+                    if existing:
+                        logger.info(f"Utente già esistente: {user_data['username']}. Nessuna aggiunta.")
+                        return False
                     new_user = User(username=user_data['username'], data=user_data)
                     db.session.add(new_user)
                     db.session.commit()
                     return True
             else:
                 # Siamo già in un contesto
+                existing = User.query.filter_by(username=user_data['username']).first()
+                if existing:
+                    logger.info(f"Utente già esistente: {user_data['username']}. Nessuna aggiunta.")
+                    return False
                 new_user = User(username=user_data['username'], data=user_data)
                 db.session.add(new_user)
                 db.session.commit()

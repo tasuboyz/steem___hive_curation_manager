@@ -705,7 +705,6 @@ class Blockchain:
             response.raise_for_status()
             
             posts = response.json().get('result', [])
-            # Filtra solo i post dell'autore (esclude reblog) e salta il primo (post attuale)
             author_posts = [post for post in posts if post.get('author') == author][1:limit+1]
             
             logger.info(f"Recuperati {len(author_posts)} post precedenti di @{author}")
