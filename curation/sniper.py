@@ -168,7 +168,7 @@ class SocialMediaPublisher:
                         f"{vote_explanation}\n{post_link}"
                     )
                 else:
-                    vote_delay = 5
+                    vote_delay = 3
                     telegram_message = (
                         f"[{platform.upper()}] (VP: {voting_power:.2f}, DEFAULT: {vote_delay} min)\n"
                         f"Nessun post precedente trovato\n{post_link}"

@@ -812,50 +812,68 @@ class Blockchain:
     
     def get_user_votes_by_days_back(self, username, days_back=7):
         """
-        Restituisce la lista dei curation rewards con informazioni sul voto corrispondente
-        negli ultimi days_back giorni.
+        Returns list of curation rewards with corresponding vote information
+        for the past days_back days, properly matching rewards with their votes
+        which typically occurred at least 7 days earlier.
         """
         for node_url in self.node_urls.get('steem'):
             if not self.ping_server(node_url):
                 logger.error(f"Impossibile raggiungere il server: {node_url}")
                 continue
-        
+    
             steem = Steem(node=node_url)
             account = Account(username, blockchain_instance=steem)
-            cutoff_date = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(days=days_back)
             
-            # First pass: collect all relevant operations
+            # Look for rewards in the specified days_back period
+            reward_cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
+            # Look for votes from a longer period (rewards come ~7 days after votes)
+            vote_cutoff_date = reward_cutoff_date - timedelta(days=14)  # Extra buffer to ensure all votes are captured
+            
+            # Process in batches using virtual operations
+            virtual_op = account.virtual_op_count()
+            batch_size = 500
+            start_from = virtual_op
+            stop = 0
+            
             recent_votes = {}
             curation_rewards = []
+            still_in_range = True
             
-            for op in account.history_reverse(use_block_num=False):
-                # Parse and validate timestamp
-                op_timestamp = op.get('timestamp')
-                if isinstance(op_timestamp, str):
-                    try:
-                        op_timestamp = datetime.strptime(op_timestamp, '%Y-%m-%dT%H:%M:%S').replace(tzinfo=timezone.utc)
-                    except ValueError:
+            while still_in_range and start_from > stop:
+                batch_stop = max(0, start_from - batch_size)
+                operations = list(account.history_reverse(start=start_from, stop=batch_stop, use_block_num=False))
+                
+                # Process this batch of operations
+                for op in operations:
+                    # Parse and validate timestamp
+                    op_timestamp = op.get('timestamp')
+                    if isinstance(op_timestamp, str):
                         try:
-                            op_timestamp = datetime.fromisoformat(op_timestamp.replace('Z', '+00:00'))
-                        except Exception:
-                            op_timestamp = None
-                
-                # Skip older operations early
-                if op_timestamp and op_timestamp < cutoff_date:
-                    # Once we hit operations older than our cutoff, we can stop
-                    break
+                            op_timestamp = datetime.strptime(op_timestamp, '%Y-%m-%dT%H:%M:%S').replace(tzinfo=timezone.utc)
+                        except ValueError:
+                            try:
+                                op_timestamp = datetime.fromisoformat(op_timestamp.replace('Z', '+00:00'))
+                            except Exception:
+                                op_timestamp = None
                     
-                # Collect vote operations
-                if op.get('type') == 'vote' and op.get('voter') == username:
-                    vote_key = f"{op.get('author')}/{op.get('permlink')}"
-                    recent_votes[vote_key] = op
-                
-                # Collect curation rewards
-                elif op.get('type') == 'curation_reward':
-                    if op_timestamp:
+                    # If we've reached operations older than our vote cutoff, we can stop
+                    if op_timestamp and op_timestamp < vote_cutoff_date:
+                        still_in_range = False
+                        break
+                        
+                    # Collect vote operations (up to the extended cutoff date)
+                    if op.get('type') == 'vote' and op.get('voter') == username:
+                        vote_key = f"{op.get('author')}/{op.get('permlink')}"
+                        recent_votes[vote_key] = op
+                    
+                    # Collect curation rewards (only up to the specified days_back)
+                    elif op.get('type') == 'curation_reward' and op_timestamp and op_timestamp >= reward_cutoff_date:
                         curation_rewards.append(op)
+                
+                # Move to the next batch
+                start_from = batch_stop
             
-            # Second pass: match curation rewards with votes
+            # Match curation rewards with votes
             combined_operations = []
             for reward in curation_rewards:
                 comment_author = reward.get('comment_author')
@@ -870,9 +888,14 @@ class Blockchain:
                     vote_info = recent_votes[vote_key]
                     combined_op['vote_info'] = vote_info
                     
-                    # Use vote timestamp instead of reward timestamp for more accurate timing analysis
-                    if 'timestamp' in vote_info:
-                        combined_op['timestamp'] = vote_info['timestamp']
+                    # Calculate time between vote and reward
+                    if 'timestamp' in vote_info and isinstance(vote_info['timestamp'], str):
+                        try:
+                            vote_time = datetime.strptime(vote_info['timestamp'], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=timezone.utc)
+                            reward_time = datetime.strptime(reward['timestamp'], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=timezone.utc) if isinstance(reward['timestamp'], str) else reward['timestamp']
+                            combined_op['days_to_reward'] = (reward_time - vote_time).total_seconds() / 86400  # Convert to days
+                        except (ValueError, TypeError):
+                            pass
                 
                 combined_operations.append(combined_op)
             
