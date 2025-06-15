@@ -127,43 +127,74 @@ class CurationMLModel:
         
         # Voter-based features
         if voter_history:
-            voter_sp_values = [v.get('steem_power', 0) for v in voter_history if v.get('steem_power', 0) > 0]
-            vote_values = [v.get('steem_vote_value', 0) for v in voter_history if v.get('steem_vote_value', 0) > 0]
+            # Nuova implementazione: categorizziamo i votanti in base all'rshares
+            rshares_values = [v.get('rshares', 0) for v in voter_history]
             vote_delays = [v.get('vote_delay_minutes', 30) for v in voter_history]
             
             features['total_voters'] = len(voter_history)
-            features['avg_voter_sp'] = np.mean(voter_sp_values) if voter_sp_values else 0
-            features['max_voter_sp'] = np.max(voter_sp_values) if voter_sp_values else 0
-            features['median_voter_sp'] = np.median(voter_sp_values) if voter_sp_values else 0
-            features['std_voter_sp'] = np.std(voter_sp_values) if len(voter_sp_values) > 1 else 0
             
-            features['avg_vote_value'] = np.mean(vote_values) if vote_values else 0
-            features['max_vote_value'] = np.max(vote_values) if vote_values else 0
-            features['total_vote_value'] = np.sum(vote_values) if vote_values else 0
+            # Categorizzazione votanti per importanza rshares
+            if rshares_values:
+                # Definizione soglie per le categorie basate su rshares
+                high_rshares_threshold = 1000000    # Votanti di alto valore
+                medium_rshares_threshold = 100000   # Votanti di medio valore
+                
+                # Categorizzazione votanti
+                high_value_voters = [v for i, v in enumerate(voter_history) if rshares_values[i] >= high_rshares_threshold]
+                medium_value_voters = [v for i, v in enumerate(voter_history) if medium_rshares_threshold <= rshares_values[i] < high_rshares_threshold]
+                low_value_voters = [v for i, v in enumerate(voter_history) if rshares_values[i] < medium_rshares_threshold]
+                
+                # Conteggio per categoria
+                features['high_value_voters_count'] = len(high_value_voters)
+                features['medium_value_voters_count'] = len(medium_value_voters)
+                features['low_value_voters_count'] = len(low_value_voters)
+                
+                # Rapporti per categoria
+                features['high_value_ratio'] = len(high_value_voters) / len(voter_history) if voter_history else 0
+                features['medium_value_ratio'] = len(medium_value_voters) / len(voter_history) if voter_history else 0
+                
+                # Statistiche rshares
+                features['max_rshares'] = max(rshares_values) if rshares_values else 0
+                features['avg_rshares'] = np.mean(rshares_values) if rshares_values else 0
+                features['median_rshares'] = np.median(rshares_values) if rshares_values else 0
+                features['total_rshares'] = sum(rshares_values) if rshares_values else 0
+                
+                # Timing per votanti di alto valore
+                if high_value_voters:
+                    hv_indices = [i for i, v in enumerate(voter_history) if rshares_values[i] >= high_rshares_threshold]
+                    hv_delays = [vote_delays[i] for i in hv_indices]
+                    features['high_value_avg_delay'] = np.mean(hv_delays) if hv_delays else 30
+                    features['high_value_min_delay'] = np.min(hv_delays) if hv_delays else 30
+                else:
+                    features['high_value_avg_delay'] = 30
+                    features['high_value_min_delay'] = 30
+                
+                # Timing per votanti di medio valore
+                if medium_value_voters:
+                    mv_indices = [i for i, v in enumerate(voter_history) if medium_rshares_threshold <= rshares_values[i] < high_rshares_threshold]
+                    mv_delays = [vote_delays[i] for i in mv_indices]
+                    features['medium_value_avg_delay'] = np.mean(mv_delays) if mv_delays else 30
+                else:
+                    features['medium_value_avg_delay'] = 30
+            else:
+                # Default per nessun rshares disponibile
+                for feature in ['high_value_voters_count', 'medium_value_voters_count', 'low_value_voters_count',
+                               'high_value_ratio', 'medium_value_ratio', 'max_rshares', 'avg_rshares',
+                               'median_rshares', 'total_rshares', 'high_value_avg_delay', 'high_value_min_delay',
+                               'medium_value_avg_delay']:
+                    features[feature] = 0
             
+            # Statistiche generali sul timing dei voti (manteniamo queste)
             features['avg_vote_delay'] = np.mean(vote_delays) if vote_delays else 30
             features['min_vote_delay'] = np.min(vote_delays) if vote_delays else 30
             features['vote_delay_std'] = np.std(vote_delays) if len(vote_delays) > 1 else 0
-            
-            # High-value voter analysis
-            high_value_voters = [v for v in voter_history if v.get('steem_vote_value', 0) >= 10]
-            features['high_value_voters_count'] = len(high_value_voters)
-            features['high_value_ratio'] = len(high_value_voters) / len(voter_history) if voter_history else 0
-            
-            if high_value_voters:
-                hv_delays = [v.get('vote_delay_minutes', 30) for v in high_value_voters]
-                features['high_value_avg_delay'] = np.mean(hv_delays)
-                features['high_value_min_delay'] = np.min(hv_delays)
-            else:
-                features['high_value_avg_delay'] = 30
-                features['high_value_min_delay'] = 30
         else:
             # Default values when no voter history
             voter_features = [
-                'total_voters', 'avg_voter_sp', 'max_voter_sp', 'median_voter_sp', 'std_voter_sp',
-                'avg_vote_value', 'max_vote_value', 'total_vote_value',
-                'avg_vote_delay', 'min_vote_delay', 'vote_delay_std',
-                'high_value_voters_count', 'high_value_ratio', 'high_value_avg_delay', 'high_value_min_delay'
+                'total_voters', 'high_value_voters_count', 'medium_value_voters_count', 'low_value_voters_count',
+                'high_value_ratio', 'medium_value_ratio', 'max_rshares', 'avg_rshares',
+                'median_rshares', 'total_rshares', 'avg_vote_delay', 'min_vote_delay', 'vote_delay_std',
+                'high_value_avg_delay', 'high_value_min_delay', 'medium_value_avg_delay'
             ]
             for feature in voter_features:
                 features[feature] = 0
@@ -336,8 +367,9 @@ class CurationMLModel:
         if not voter_history:
             return 5.0, {'ml_prediction': False, 'fallback': 'no_voter_history'}
         
-        # Simple heuristic based on high-value voters
-        high_value_voters = [v for v in voter_history if v.get('steem_vote_value', 0) >= 10]
+        # Simple heuristic based on high-value voters (ora con rshares)
+        high_rshares_threshold = 1000000  # Soglia per votanti di alto valore
+        high_value_voters = [v for v in voter_history if float(v.get('rshares', 0)) >= high_rshares_threshold]
         if high_value_voters:
             delays = [v.get('vote_delay_minutes', 30) for v in high_value_voters]
             optimal_time = max(1.0, min(delays) - 1.0)  # Vote 1 minute before earliest high-value voter
@@ -353,10 +385,14 @@ class CurationMLModel:
         
         # Increase confidence if we have good voter data
         if features.get('total_voters', 0) > 3:
-            confidence += 0.2
+            confidence += 0.1
+        
+        # Usa le nuove metriche basate su rshares
         if features.get('high_value_voters_count', 0) > 0:
             confidence += 0.2
-        if features.get('avg_voter_sp', 0) > 1000:
+        if features.get('max_rshares', 0) > 1000000:
+            confidence += 0.1
+        if features.get('total_rshares', 0) > 5000000:
             confidence += 0.1
             
         return min(1.0, confidence)
@@ -490,8 +526,12 @@ class TrainingDataCollector:
         if not voter_history:
             return 5.0
         
-        # Find high-value voters who voted after our vote
-        high_value_voters = [v for v in voter_history if v.get('steem_vote_value', 0) >= 10]
+        # Utilizziamo rshares invece di steem_vote_value
+        # Definiamo la soglia per votanti di alto valore in base a rshares
+        high_rshares_threshold = 1000000
+        
+        # Troviamo votanti ad alto valore di rshares
+        high_value_voters = [v for v in voter_history if v.get('rshares', 0) >= high_rshares_threshold]
         
         if high_value_voters:
             # Optimal timing would be just before the earliest high-value voter

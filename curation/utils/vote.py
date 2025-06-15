@@ -320,16 +320,17 @@ class VoteManager:
                 'voter_groups': {}
             }
         
-        # Ordina i votanti per valore del voto in STEEM (decrescente)
-        important_voters = sorted(voters_data, key=lambda x: x.get('steem_vote_value', 0) or 0, reverse=True)
+        # Modifica: Ordina i votanti per rshares (decrescente) invece che per valore del voto
+        important_voters = sorted(voters_data, key=lambda x: float(x.get('rshares', 0)), reverse=True)
         
-        # Calcola dinamicamente il numero di top voters da considerare in base al loro valore
-        # Conta quanti votanti hanno almeno 10 STEEM di valore
+        # Calcola dinamicamente il numero di top voters da considerare in base al loro valore di rshares
+        # Soglia elevata per rshares (1 milione)
         default_top_count = 3
-        high_value_voters = [v for v in important_voters if (v.get('steem_vote_value', 0) or 0) >= 10.0]
+        high_rshares_threshold = 1000000
+        high_value_voters = [v for v in important_voters if float(v.get('rshares', 0)) >= high_rshares_threshold]
         num_high_value = len(high_value_voters)
         
-        # Se ci sono votanti con almeno 10 STEEM, allarga la considerazione per includere almeno questi
+        # Se ci sono votanti con rshares sopra la soglia, allarga la considerazione per includere almeno questi
         if num_high_value > 0:
             # Usa max_top_voters ma assicurati di includere almeno tutti quelli con alto valore
             effective_top_voters = max(num_high_value, min(max_top_voters, len(important_voters)))
@@ -337,7 +338,7 @@ class VoteManager:
             # Altrimenti usa solo il conteggio predefinito
             effective_top_voters = default_top_count
         
-        logger.debug(f"Trovati {num_high_value} votanti con valore ≥ 10 STEEM, "
+        logger.debug(f"Trovati {num_high_value} votanti con rshares ≥ {high_rshares_threshold}, "
                      f"utilizzando {effective_top_voters} top voters su {len(important_voters)} totali")
         
         # Prendi un numero appropriato di votanti importanti, se disponibili
@@ -510,21 +511,19 @@ class VoteManager:
             vote_time = None
             vote_percent = float(vote_data.get('percent', 0))
             
-            # Se richiesta analisi dettagliata o se il voto ha rshares significativi
-            if process_details or vote_rshares >= 1e9:  # 1B rshares come soglia
-                try:
+            # Otteniamo il timestamp del voto
+            try:
+                vote_time = vote_data.get('time')
+                if not vote_time:
                     vote = Vote(voter_name, post_url, blockchain_instance=blockchain_instance)
                     vote_time = vote.time
-                    vote_percent = vote.percent
-                    if vote_time.tzinfo is None:
-                        vote_time = vote_time.replace(tzinfo=timezone.utc)
-                    
-                    if not vote_rshares or vote_rshares == 0:
-                        vote_rshares = float(vote.rshares)
-                        
-                except Exception as vote_error:
-                    logger.debug(f"Errore nel recupero dati voto per {voter_name}: {vote_error}")
-                    vote_time = None
+                
+                if vote_time.tzinfo is None:
+                    vote_time = vote_time.replace(tzinfo=timezone.utc)
+                
+            except Exception as vote_error:
+                logger.debug(f"Errore nel recupero timestamp voto per {voter_name}: {vote_error}")
+                vote_time = None
             
             # Se non abbiamo il tempo del voto, usa una stima
             if vote_time is None:
@@ -533,42 +532,42 @@ class VoteManager:
             # Calcola il ritardo del voto in minuti
             vote_delay_minutes = int((vote_time - post_created).total_seconds() / 60)
             
-            # Calcola l'importanza usando rshares direttamente se disponibili
-            importance = vote_rshares / 1e12  # Normalizza per leggibilità
+            # Calcola l'importanza usando rshares direttamente 
+            # MODIFICA: Ora utilizziamo principalmente rshares per l'importanza
+            importance = vote_rshares / 1e9  # Normalizza per leggibilità
             
             # Variabili predefinite
             vests = 0
             reputation = 0
             steem_vote_value = 0
-            sbd_vote_value = 0
-            calculate_vote_value = None
             
-            # Per i voti con dettagli o con rshares significativi, ottieni dettagli aggiuntivi
-            if process_details or vote_rshares >= 1e9:
+            # MODIFICA: Otteniamo solo i dettagli minimi necessari per i voti più significativi
+            # Questo riduce il carico di elaborazione durante il training
+            high_rshares_threshold = 1000000  # Soglia per considerare un voto di alto valore
+            
+            if process_details and vote_rshares >= high_rshares_threshold:
                 # Ottieni account dalla cache o dalla blockchain
                 voter_account = self._get_cached_account(voter_name, blockchain_instance)
                 if voter_account:
                     try:
+                        reputation = voter_account.get_reputation()
+                        
+                        # MODIFICA: Evitiamo il calcolo completo del valore del voto per migliorare le performance
+                        # Utilizziamo una stima approssimativa che è molto più veloce
                         vests = float(voter_account['vesting_shares'].amount) + \
                                float(voter_account['received_vesting_shares'].amount) - \
                                float(voter_account['delegated_vesting_shares'].amount)
                         
-                        calculate_vote_value = self.calculate_vote_value(vote_percent, effective_vests=vests)
-                        steem_vote_value = calculate_vote_value.get('steem_value', 0)
-                        sbd_vote_value = calculate_vote_value.get('sbd_value', 0)
+                        # Stima approssimativa del valore del voto basata su rshares e vests
+                        # Questo è molto più veloce che chiamare il calcolo completo
+                        steem_vote_value = (vote_rshares / 1e6) * 0.01  # Stima approssimativa
                         
-                        # Calcola l'importanza considerando sia i vesting shares che il valore in STEEM
-                        steem_importance = steem_vote_value * 10  # Diamo più peso al valore effettivo in STEEM
-                        vest_importance = vests / 1e6
-                        # Usa una media ponderata con più peso al valore STEEM (70% STEEM, 30% vesting)
-                        importance = 0.7 * steem_importance + 0.3 * vest_importance
-                        
-                        reputation = voter_account.get_reputation()
                     except Exception as e:
                         logger.debug(f"Non è stato possibile calcolare tutti i dettagli per {voter_name}: {e}")
             
             # Verifica se il votante supera la soglia di importanza minima
-            if importance >= min_importance or vote_rshares >= min_importance * 1e12:
+            # MODIFICA: Utilizziamo principalmente rshares come criterio di importanza
+            if importance >= min_importance:
                 return {
                     'voter': voter_name,
                     'weight': vote_percent,
@@ -578,8 +577,7 @@ class VoteManager:
                     'vote_time': vote_time.strftime('%Y-%m-%d %H:%M:%S') if hasattr(vote_time, 'strftime') else vote_time,
                     'vote_delay_minutes': vote_delay_minutes,
                     'reputation': reputation,
-                    'steem_vote_value': steem_vote_value,
-                    'sbd_vote_value': sbd_vote_value
+                    'steem_vote_value': steem_vote_value
                 }
             return None
                 
