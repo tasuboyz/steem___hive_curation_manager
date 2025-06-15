@@ -12,6 +12,7 @@
   --danger-color: #dc3545;
   --warning-color: #ffc107;
   --modal-overlay: rgba(0, 0, 0, 0.5);
+  --accent-color: #9b59b6;
 }
 
 /* Dark theme */
@@ -979,4 +980,155 @@ input#voteDelay.auto-mode {
   background-color: #f0f0f0;
   border: 1px dashed var(--primary-color);
   color: #888;
+}
+
+/* User info in header */
+.user-info-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-left: auto;
+}
+
+.user-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.user-stats .username {
+  font-weight: 600;
+  color: var(--accent-color);
+}
+
+.user-stats .platform {
+  background: var(--accent-color);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.user-stats .plan {
+  background: var(--success-color);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.user-stats .usage {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.logout-btn {
+  background: var(--error-color);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.logout-btn:hover {
+  background: #c53030;
+}
+
+/* Theme toggle button fixes */
+.theme-toggle {
+  background: var(--card-background) !important;
+  color: var(--text-color) !important;
+  border: 1px solid var(--border-color) !important;
+  transition: all 0.3s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--background-color) !important;
+}
+
+.theme-toggle .fa-moon,
+.theme-toggle .fa-sun {
+  transition: all 0.3s ease;
+}
+
+/* Assicura che il tema sia applicato correttamente */
+html[data-theme="light"] {
+  --bg-color: #f0f2f5;
+  --text-color: #14171a;
+  --card-bg: white;
+  --border-color: #e1e8ed;
+  --accent-color: #9b59b6;
+}
+
+html[data-theme="dark"] {
+  --bg-color: #1a1a1a;
+  --text-color: #ffffff;
+  --card-bg: #2d2d2d;
+  --border-color: #404040;
+  --accent-color: #9b59b6;
+}
+
+/* Forza l'applicazione delle variabili del tema */
+body {
+  background-color: var(--bg-color, var(--background-color)) !important;
+  color: var(--text-color) !important;
+}
+
+.card {
+  background-color: var(--card-bg, var(--card-background)) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+/* Responsive adjustments for user header */
+@media (max-width: 768px) {
+  .user-info-header {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .user-stats {
+    font-size: 0.8rem;
+  }
+}
+
+/* Authentication required overlay */
+.auth-required-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.auth-required-modal {
+  background: var(--card-bg);
+  padding: 2rem;
+  border-radius: 12px;
+  text-align: center;
+  max-width: 400px;
+  margin: 1rem;
+}
+
+.auth-required-modal h2 {
+  color: var(--text-color);
+  margin-bottom: 1rem;
+}
+
+.auth-required-modal p {
+  color: var(--text-secondary);
+  margin-bottom: 1.5rem;
 }

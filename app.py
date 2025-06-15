@@ -1,9 +1,11 @@
-from flask import request, jsonify, render_template
+from flask import request, jsonify, render_template, redirect
 from curation.components.logger_config import logger
 from curation.components.config import TEST
 from curation.components.factory import create_app, init_services, app_state
 from curation.services.user_service import UserService
 from curation.services.settings_service import SettingsService
+from curation.services.auth_service import AuthService
+from curation.middleware.auth_middleware import auth_required, get_current_user, check_user_limits
 from curation.components.beem import Blockchain
 from curation.utils.vote import VoteManager
 import signal
@@ -14,10 +16,96 @@ app = create_app()
 blockchain_connector = Blockchain(app=app)  # Istanza globale per la classe Blockchain
 vote_manager = VoteManager()
 
+# === ROUTE DI AUTENTICAZIONE ===
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """Login con username blockchain e posting key"""
+    data = request.json
+    if not data or 'username' not in data or 'posting_key' not in data or 'platform' not in data:
+        return jsonify({'error': 'Username, posting_key and platform required'}), 400
+    
+    username = data['username'].strip()
+    posting_key = data['posting_key'].strip()
+    platform = data['platform'].lower()
+    
+    if platform not in ['steem', 'hive']:
+        return jsonify({'error': 'Platform must be steem or hive'}), 400
+    
+    result = AuthService.authenticate_user(username, posting_key, platform)
+    
+    if result['success']:
+        response = jsonify({
+            'message': result['message'],
+            'user': AuthService.get_user_stats(result['user']),
+            'token': result['token']
+        })
+        # Imposta anche il cookie per compatibilità con il frontend esistente
+        response.set_cookie('session_token', result['token'], 
+                          max_age=30*24*60*60, httponly=True, secure=False)
+        return response
+    else:
+        return jsonify({'error': result['message']}), 401
+
+@app.route('/api/auth/logout', methods=['POST'])
+@auth_required
+def logout():
+    """Logout dell'utente"""
+    token = request.cookies.get('session_token')
+    if not token:
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+    
+    if token:
+        AuthService.logout_user(token)
+    
+    response = jsonify({'message': 'Logged out successfully'})
+    response.set_cookie('session_token', '', expires=0)
+    return response
+
+@app.route('/api/auth/me', methods=['GET'])
+@auth_required
+def get_current_user_info():
+    """Ottieni informazioni sull'utente corrente"""
+    user = get_current_user()
+    return jsonify(AuthService.get_user_stats(user))
+
+@app.route('/api/auth/check', methods=['GET'])
+def check_auth():
+    """Controlla se l'utente è autenticato"""
+    token = request.cookies.get('session_token')
+    if not token:
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+    
+    if token:
+        user_account = AuthService.verify_session_token(token)
+        if user_account:
+            return jsonify({
+                'authenticated': True,
+                'user': AuthService.get_user_stats(user_account)
+            })
+    
+    return jsonify({'authenticated': False})
+
 # Definire le route
 @app.route('/')
 def home():
-    return render_template('index.html')
+    # Verifica se l'utente ha un token di sessione valido
+    token = request.cookies.get('session_token')
+    if token:
+        user_account = AuthService.verify_session_token(token)
+        if user_account:
+            return render_template('index.html')
+    
+    # Se non autenticato, reindirizza al login
+    return redirect('/login.html')
+
+@app.route('/login.html')
+def login_page():
+    return render_template('login.html')
 
 @app.route('/settings')
 def settings():
@@ -66,39 +154,61 @@ def get_post_voters():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/users', methods=['POST'])
+@auth_required
+@check_user_limits(max_watched=True)
 def add_user():
     user_data = request.json
+    user_account = get_current_user()
+    
+    # Aggiungi l'ID dell'account utente ai dati
+    user_data['user_account_id'] = user_account.id
+    
     success = UserService.add_user(user_data)
     if success:
         return jsonify({'message': 'User added successfully'})
     return jsonify({'message': 'Error adding user'}), 500
 
 @app.route('/users/<username>', methods=['PUT'])
+@auth_required
 def update_user(username):
     user_data = request.json
-    success = UserService.update_user(username, user_data)
+    user_account = get_current_user()
+    
+    success = UserService.update_user(username, user_data, user_account.id)
     if success:
         return jsonify({'message': 'User updated successfully'})
     return jsonify({'message': 'User not found or error updating'}), 404
 
 @app.route('/users/<username>', methods=['DELETE'])
+@auth_required
 def delete_user(username):
-    success = UserService.delete_user(username)
+    user_account = get_current_user()
+    success = UserService.delete_user(username, user_account.id)
     if success:
         return jsonify({'message': 'User deleted successfully'})
     return jsonify({'message': 'User not found'}), 404
 
 @app.route('/users/<username>', methods=['GET'])
+@auth_required
 def get_user(username):
-    user_data = UserService.get_user_by_username(username)
+    user_account = get_current_user()
+    user_data = UserService.get_user_by_username(username, user_account.id)
     if user_data:
         return jsonify(user_data)
     return jsonify({'message': 'User not found'}), 404
 
 @app.route('/users', methods=['GET'])
+@auth_required
 def get_all_users():
-    users = UserService.get_users_by_platform()
-    user_list = [{'username': user.username, 'data': user.data} for user in users]
+    user_account = get_current_user()
+    # Ottieni tutti gli account monitorati per l'utente autenticato
+    watched_accounts = UserService.get_all_users(user_account.id)
+    # watched_accounts è un dict {username: dati}
+    user_list = []
+    for username, data in watched_accounts.items():
+        entry = {'username': username}
+        entry.update(data)
+        user_list.append(entry)
     return jsonify(user_list)
 
 # Routes per la gestione delle impostazioni

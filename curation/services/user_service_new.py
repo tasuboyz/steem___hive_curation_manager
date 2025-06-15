@@ -9,99 +9,89 @@ class UserService:
     
     @staticmethod
     def _ensure_app_context(app=None):
-        """Assicura che ci sia un contesto dell'applicazione attivo
-        
-        Se app è fornito, crea un nuovo contesto.
-        Se current_app è disponibile, lo usa.
-        Ritorna il contesto (per uso con 'with') o None se già in un contesto.
-        """
-        if app is not None:
+        """Assicura che ci sia un contesto dell'applicazione Flask"""
+        if app:
             return app.app_context()
+        elif current_app:
+            return None  # Siamo già in un contesto
+        else:
+            logger.error("Nessun contesto app disponibile")
+            return None
+
+    @staticmethod
+    def get_all_users(user_account_id, app=None):
+        """Recupera tutti gli utenti monitorati per l'account specificato"""
+        try:
+            ctx = UserService._ensure_app_context(app)
+            if ctx:
+                with ctx:
+                    return UserService._get_watched_accounts(user_account_id)
+            else:
+                return UserService._get_watched_accounts(user_account_id)
+        except Exception as e:
+            logger.error(f"Errore nel recupero degli utenti: {e}")
+            return []
+
+    @staticmethod
+    def _get_watched_accounts(user_account_id):
+        """Recupera tutti gli account monitorati per l'utente"""
+        watched_accounts = UserWatchedAccount.query.filter_by(
+            user_account_id=user_account_id
+        ).all()
         
+        result = {}
+        for account in watched_accounts:
+            result[account.watched_username] = account.to_dict()
+        
+        return result
+
+    @staticmethod
+    def get_user_by_username(username, user_account_id, app=None):
+        """Recupera un utente specifico per l'account"""
         try:
-            # Verifica se siamo già in un contesto
-            _ = current_app._get_current_object()
+            ctx = UserService._ensure_app_context(app)
+            if ctx:
+                with ctx:
+                    return UserService._get_watched_account(username, user_account_id)
+            else:
+                return UserService._get_watched_account(username, user_account_id)
+        except Exception as e:
+            logger.error(f"Errore nel recupero dell'utente {username}: {e}")
             return None
-        except RuntimeError:
-            logger.error("Nessun contesto applicazione disponibile e nessun app fornito")
-            raise
-    
+
     @staticmethod
-    def get_users_by_platform(platform=None, app=None):
-        """Recupera utenti filtrati per piattaforma (o tutti se platform=None)"""
-        try:
-            ctx = UserService._ensure_app_context(app)
-            if ctx:
-                with ctx:
-                    users = User.query.all()
-                    if platform:
-                        return [u for u in users if u.data.get('platform') == platform]
-                    return users
-            else:
-                # Siamo già in un contesto
-                users = User.query.all()
-                if platform:
-                    return [u for u in users if u.data.get('platform') == platform]
-                return users
-        except Exception as e:
-            logger.error(f"Errore nel recupero degli utenti dal database: {e}")
-            return []
-    
+    def _get_watched_account(username, user_account_id):
+        """Recupera un account monitorato specifico"""
+        watched_account = UserWatchedAccount.query.filter_by(
+            user_account_id=user_account_id,
+            watched_username=username
+        ).first()
+        
+        if watched_account:
+            return watched_account.to_dict()
+        return None
+
     @staticmethod
-    def get_usernames_by_platform(platform, app=None):
-        """Restituisce una lista di nomi utente per la piattaforma specificata"""
+    def get_user_by_post_link(post_link, app=None):
+        """Trova un utente basato sul link del post (per compatibilità legacy)"""
         try:
-            ctx = UserService._ensure_app_context(app)
-            if ctx:
-                with ctx:
-                    users = User.query.all()
-                    return [u.username for u in users if u.data.get('platform') == platform]
-            else:
-                # Siamo già in un contesto
-                users = User.query.all()
-                return [u.username for u in users if u.data.get('platform') == platform]
-        except Exception as e:
-            logger.error(f"Errore nel recupero dei nomi utente dal database: {e}")
-            return []
-    
-    @staticmethod
-    def get_user_by_username(username, app=None):
-        """Recupera i dati di un utente specifico"""
-        try:
-            ctx = UserService._ensure_app_context(app)
-            if ctx:
-                with ctx:
-                    user = User.query.filter_by(username=username).first()
-                    if user:
-                        return user.data
-                    return None
-            else:
-                # Siamo già in un contesto
-                user = User.query.filter_by(username=username).first()
-                if user:
-                    return user.data
-                return None
-        except Exception as e:
-            logger.error(f"Errore nel recupero dell'utente {username} dal database: {e}")
-            return None
-    
-    @staticmethod
-    def get_user_for_post(post_link, app=None):
-        """Trova l'utente associato a un post tramite il link"""
-        try:
-            ctx = UserService._ensure_app_context(app)
-            if ctx:
-                with ctx:
-                    users = User.query.all()
-                    for user in users:
-                        if user.username in post_link:
+            # Estrai username dal link del post
+            if '@' in post_link:
+                parts = post_link.split('@')
+                if len(parts) > 1:
+                    username_part = parts[1].split('/')[0]
+                    
+                    ctx = UserService._ensure_app_context(app)
+                    if ctx:
+                        with ctx:
+                            # Cerca nel vecchio sistema per compatibilità
+                            user = User.query.filter_by(username=username_part).first()
+                            if user:
+                                return user.data
+                    else:
+                        user = User.query.filter_by(username=username_part).first()
+                        if user:
                             return user.data
-                    return None
-            else:
-                # Siamo già in un contesto
-                users = User.query.all()
-                for user in users:
-                    if user.username in post_link:                        return user.data
                 return None
         except Exception as e:
             logger.error(f"Errore nella ricerca dell'utente per il post {post_link}: {e}")
@@ -154,6 +144,7 @@ class UserService:
             votes_per_day=user_data.get('votesPerDay', 1),
             use_optimal_time=user_data.get('useOptimalTime', False)
         )
+        
         db.session.add(new_watched)
         db.session.commit()
         logger.info(f"Nuovo account monitorato aggiunto: {username} su {platform}")
@@ -198,27 +189,52 @@ class UserService:
         db.session.commit()
         logger.info(f"Account monitorato aggiornato: {username} su {platform}")
         return True
-    
+
     @staticmethod
     def delete_user(username, user_account_id, app=None):
-        """Elimina un account monitorato (UserWatchedAccount) per l'utente autenticato"""
+        """Elimina un utente monitorato dal database"""
         try:
             ctx = UserService._ensure_app_context(app)
             if ctx:
                 with ctx:
-                    watched = UserWatchedAccount.query.filter_by(username=username, user_account_id=user_account_id).first()
-                    if watched:
-                        db.session.delete(watched)
-                        db.session.commit()
-                        return True
-                    return False
+                    return UserService._delete_watched_account(username, user_account_id)
             else:
-                watched = UserWatchedAccount.query.filter_by(username=username, user_account_id=user_account_id).first()
-                if watched:
-                    db.session.delete(watched)
+                return UserService._delete_watched_account(username, user_account_id)
+        except Exception as e:
+            logger.error(f"Errore nell'eliminazione dell'utente {username}: {e}")
+            return False
+
+    @staticmethod
+    def _delete_watched_account(username, user_account_id):
+        """Elimina un account monitorato"""
+        watched_account = UserWatchedAccount.query.filter_by(
+            user_account_id=user_account_id,
+            watched_username=username
+        ).first()
+        
+        if not watched_account:
+            logger.warning(f"Account monitorato non trovato: {username}")
+            return False
+        
+        db.session.delete(watched_account)
+        db.session.commit()
+        logger.info(f"Account monitorato eliminato: {username}")
+        return True
+
+    @staticmethod
+    def clear_all_users(app=None):
+        """Elimina tutti gli utenti dal database (legacy - mantenuto per compatibilità)"""
+        try:
+            ctx = UserService._ensure_app_context(app)
+            if ctx:
+                with ctx:
+                    User.query.delete()
                     db.session.commit()
                     return True
-                return False
+            else:
+                User.query.delete()
+                db.session.commit()
+                return True
         except Exception as e:
-            logger.error(f"Errore nell'eliminazione dell'account monitorato {username} per user_account_id {user_account_id}: {e}")
+            logger.error(f"Errore nella cancellazione di tutti gli utenti: {e}")
             return False

@@ -1,4 +1,4 @@
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,8 +10,14 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/header.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-counter.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-counter-dark.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-input-enhancements.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-input-decorations.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-input-enhancements.css') }}">  <link rel="stylesheet" href="{{ url_for('static', filename='css/vote-input-decorations.css') }}">
+  
+  <!-- Inizializza il tema prima del caricamento completo -->
+  <script>
+    // Carica il tema salvato immediatamente
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+  </script>
 </head>
 <body>
   <div class="container">
@@ -112,5 +118,43 @@
     <!-- Script principale dell'applicazione (con type="module" per supportare import/export) -->
   <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vote-tooltip.js') }}"></script>
+  
+  <!-- Script di debug per il tema -->
+  <script>
+    // Debug del tema
+    console.log('Theme debug loaded');
+    console.log('Current theme:', document.documentElement.getAttribute('data-theme'));
+    console.log('Theme toggle button exists:', !!document.getElementById('themeToggle'));
+    
+    // Fallback per il tema se i moduli non funzionano
+    document.addEventListener('DOMContentLoaded', () => {
+      const themeButton = document.getElementById('themeToggle');
+      if (themeButton && !themeButton.hasAttribute('data-event-added')) {
+        console.log('Adding fallback theme toggle');
+        themeButton.addEventListener('click', () => {
+          const currentTheme = document.documentElement.getAttribute('data-theme');
+          const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+          
+          document.documentElement.setAttribute('data-theme', newTheme);
+          localStorage.setItem('theme', newTheme);
+          
+          // Aggiorna l'icona
+          const moonIcon = themeButton.querySelector('.fa-moon');
+          const sunIcon = themeButton.querySelector('.fa-sun');
+          
+          if (newTheme === 'dark') {
+            moonIcon.style.display = 'none';
+            sunIcon.style.display = 'block';
+          } else {
+            moonIcon.style.display = 'block';
+            sunIcon.style.display = 'none';
+          }
+          
+          console.log('Theme changed to:', newTheme);
+        });
+        themeButton.setAttribute('data-event-added', 'true');
+      }
+    });
+  </script>
 </body>
 </html>

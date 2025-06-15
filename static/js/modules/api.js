@@ -9,6 +9,22 @@ class ApiService {
   }
 
   /**
+   * Ottieni gli header di autenticazione
+   */
+  getAuthHeaders() {
+    const token = localStorage.getItem('authToken');
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    return headers;
+  }
+
+  /**
    * Invia una richiesta HTTP al server con gestione automatica dei tentativi
    * @param {string} endpoint - Endpoint API
    * @param {string} method - Metodo HTTP (GET, POST, PUT, DELETE)
@@ -21,9 +37,7 @@ class ApiService {
       try {
         const response = await fetch(`${endpoint}`, {
           method: method,
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: this.getAuthHeaders(),
           body: data ? JSON.stringify(data) : undefined
         });
 

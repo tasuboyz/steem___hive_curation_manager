@@ -2,31 +2,24 @@
  * Modulo per la gestione delle impostazioni
  */
 import apiService from './modules/api.js';
+import themeService from './modules/theme.js';
 
 class SettingsManager {
   constructor() {
-    this.themeDark = localStorage.getItem('theme') === 'dark';
-    
-    // Elementi UI
+    // Inizializza il servizio tema
+    themeService.init();
+      // Elementi UI
     this.steemForm = document.getElementById('steemCuratorForm');
     this.hiveForm = document.getElementById('hiveCuratorForm');
     this.testModeToggle = document.getElementById('testModeToggle');
-    this.themeToggle = document.getElementById('themeToggle');
     this.notification = document.getElementById('notification');
-    
-    // Imposta il tema iniziale
-    this.updateTheme();
     
     // Configura gli eventi
     this.setupEventListeners();
     
     // Carica i dati iniziali
     this.loadSettings();
-  }
-    setupEventListeners() {
-    // Event listener per il tema
-    this.themeToggle.addEventListener('click', () => this.toggleTheme());
-    
+  }  setupEventListeners() {
     // Event listener per la modalità test
     this.testModeToggle.addEventListener('change', e => this.updateTestMode(e.target.checked));
     
@@ -218,19 +211,7 @@ class SettingsManager {
       input.type = 'password';
       passwordField.classList.remove('visible');
     }
-  }
-  
-  toggleTheme() {
-    this.themeDark = !this.themeDark;
-    localStorage.setItem('theme', this.themeDark ? 'dark' : 'light');
-    this.updateTheme();
-  }
-  
-  updateTheme() {
-    document.documentElement.setAttribute('data-theme', this.themeDark ? 'dark' : 'light');
-    this.themeToggle.setAttribute('aria-label', this.themeDark ? 'Switch to light theme' : 'Switch to dark theme');
-  }
-  
+  }  
   async handleBotFormSubmit(e) {
     e.preventDefault();
     
@@ -239,7 +220,6 @@ class SettingsManager {
       admin_ids: formData.get('admin_ids'),
       bot_token: formData.get('bot_token')
     };
-    
     try {
       const response = await apiService.sendRequest('/api/bot/update', 'POST', data);
       

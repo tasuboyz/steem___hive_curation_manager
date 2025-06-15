@@ -48,50 +48,28 @@ class Blockchain:
             logger.error(f"Error pinging server {node_url}: {e}")
             return False
 
-    def get_steem_profile_info(self, username):  
-        for node_url in self.node_urls.get('steem'):
+    def get_profile_info(self, username, platform='steem'):  
+        for node_url in self.node_urls.get(platform):
             if not self.ping_server(node_url):
                 logger.error(f"Impossibile raggiungere il server: {node_url}")
                 continue  # Prova il nodo successivo
 
-        data = {
-        "jsonrpc": "2.0",
-        "method": "condenser_api.get_accounts",
-        "params": [[username]],
-        "id": 1
-        }
-        response = requests.post(node_url, data=json.dumps(data))
-        if response.status_code == 200:
-            data = response.json()
-            if len(data['result']) > 0:
-                return data
+            data = {
+            "jsonrpc": "2.0",
+            "method": "condenser_api.get_accounts",
+            "params": [[username]],
+            "id": 1
+            }
+            response = requests.post(node_url, data=json.dumps(data))
+            if response.status_code == 200:
+                data = response.json()
+                if len(data['result']) > 0:
+                    return data
+                else:
+                    logger.error(f"user not exist: username={username}, node={node_url}, response={data}")
+                    raise Exception("user not exist")
             else:
-                logger.error(f"user not exist: username={username}, node={node_url}, response={data}")
-                raise Exception("user not exist")
-        else:
-            raise Exception(response.reason)
-            
-    def get_hive_profile_info(self, username):  
-        for node_url in self.node_urls.get('hive'):
-            if not self.ping_server(node_url):
-                logger.error(f"Impossibile raggiungere il server: {node_url}")
-                continue  # Prova il nodo successivo
-
-        data = {
-        "jsonrpc": "2.0",
-        "method": "condenser_api.get_accounts",
-        "params": [[username]],
-        "id": 1
-        }
-        response = requests.post(node_url, data=json.dumps(data))
-        if response.status_code == 200:
-            data = response.json()
-            if len(data['result']) > 0:
-                return data
-            else:
-                raise Exception("user not exist")
-        else:
-            raise Exception(response.reason)
+                raise Exception(response.reason)
 
     def get_posts(self, usernames, platform, max_age_minutes=5):
         post_links = []
@@ -784,6 +762,7 @@ class Blockchain:
             batch_size = 500
             start_from = virtual_op
             stop = 0
+            
             for op in account.history_reverse(start=start_from, stop=stop, use_block_num=False):
                 if op['type'] == 'vote' and op.get('author') == author:
                     vote_time = op.get('timestamp')
@@ -797,15 +776,98 @@ class Blockchain:
                                 vote_time = datetime.fromisoformat(vote_time.replace('Z', '+00:00'))
                             except Exception:
                                 continue
+                                
                     if vote_time.tzinfo is None:
                         vote_time = vote_time.replace(tzinfo=timezone.utc)
+                        
                     if vote_time > since:
                         votes += 1
                     else:
                         # Appena trovi una operazione troppo vecchia, puoi fermarti
                         break
+                        
             self._local_cache[cache_key] = {'timestamp': now, 'count': votes}
             return votes
         except Exception as e:
             logger.error(f"Errore in get_votes_today: {e}")
             return 0
+            
+    def verify_account_exists(self, username, posting_key, platform='steem'):
+        """
+        Verifica se un account esiste sulla blockchain e se la posting key è corretta.
+
+        Args:
+            username (str): Nome utente da verificare
+            posting_key (str): Posting key da verificare
+            platform (str): 'steem' o 'hive'
+
+        Returns:
+            dict: {'exists': bool, 'key_valid': bool, 'message': str}
+        """
+        try:
+            blockchain_instance = None
+            
+            if platform == 'steem':
+                for node_url in self.node_urls.get('steem'):
+                    if self.ping_server(node_url):
+                        blockchain_instance = Steem(node=node_url)
+                        break
+                else:
+                    logger.error("Nessun nodo Steem disponibile")
+                    return {'exists': False, 'key_valid': False, 'message': 'No Steem nodes available'}
+                    
+            else:  # hive
+                for node_url in self.node_urls.get('hive'):
+                    if self.ping_server(node_url):
+                        blockchain_instance = Hive(node=node_url)
+                        break
+                else:
+                    logger.error("Nessun nodo Hive disponibile")
+                    return {'exists': False, 'key_valid': False, 'message': 'No Hive nodes available'}
+
+            # Verifica se l'account esiste
+            account = Account(username, blockchain_instance=blockchain_instance)
+            if account is None:
+                logger.warning(f"Account {username} non esiste su {platform}")
+                return {'exists': False, 'key_valid': False, 'message': f'Account {username} does not exist on {platform}'}
+
+            # Verifica la posting key
+            try:
+                # Ottieni le chiavi pubbliche dell'account
+                account_data = account.json()
+                posting_auths = account_data.get('posting', {}).get('key_auths', [])
+                
+                if not posting_auths:
+                    logger.error(f"Nessuna posting key trovata per {username}")
+                    return {'exists': True, 'key_valid': False, 'message': 'No posting keys found for account'}
+                
+                # Verifica la posting key fornita
+                from beemgraphenebase.account import PrivateKey, PublicKey
+                
+                try:
+                    # Converti la chiave privata in chiave pubblica
+                    private_key = PrivateKey(posting_key)
+                    public_key = private_key.pubkey
+                    public_key_str = str(public_key)
+                    
+                    # Controlla se la chiave pubblica derivata corrisponde a una delle posting keys dell'account
+                    account_posting_keys = [key[0] for key in posting_auths]
+                    
+                    if public_key_str in account_posting_keys:
+                        logger.info(f"Posting key verificata con successo per {username} su {platform}")
+                        return {'exists': True, 'key_valid': True, 'message': 'Account and posting key verified successfully'}
+                    else:
+                        logger.warning(f"Posting key non corretta per {username} su {platform}")
+                        return {'exists': True, 'key_valid': False, 'message': 'Invalid posting key for this account'}
+                        
+                except Exception as key_error:
+                    logger.error(f"Errore nella verifica della posting key per {username}: {key_error}")
+                    return {'exists': True, 'key_valid': False, 'message': f'Invalid posting key format: {str(key_error)}'}
+                    
+            except Exception as auth_error:
+                logger.error(f"Errore nel recupero delle informazioni di autenticazione per {username}: {auth_error}")
+                return {'exists': True, 'key_valid': False, 'message': f'Error verifying posting key: {str(auth_error)}'}
+
+        except Exception as e:
+            logger.error(f"Errore nella verifica dell'account {username} su {platform}: {e}")
+            return {'exists': False, 'key_valid': False, 'message': f'Error verifying account: {str(e)}'}

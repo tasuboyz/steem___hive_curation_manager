@@ -152,29 +152,7 @@ class UIService {
   closeModal(modal) {
     modal.classList.add('fade-out');
     setTimeout(() => modal.remove(), 300);
-  }
-
-  /**
-   * Aggiorna l'icona del tema in base al tema corrente
-   */
-  updateThemeIcon() {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    const themeButton = document.getElementById('themeToggle');
-    if (themeButton) {
-      const moonIcon = themeButton.querySelector('.fa-moon');
-      const sunIcon = themeButton.querySelector('.fa-sun');
-      
-      if (currentTheme === 'dark') {
-        moonIcon.style.display = 'none';
-        sunIcon.style.display = 'block';
-      } else {
-        moonIcon.style.display = 'block';
-        sunIcon.style.display = 'none';
-      }
-    }
-  }
-  
-  /**
+  }  /**
    * Renderizza i dati dei votanti
    * @param {HTMLElement} container - Container dove visualizzare i dati
    * @param {Object} data - Dati dei votanti

@@ -8,37 +8,190 @@ import apiService from './modules/api.js';
 import blockchainService from './modules/blockchain.js';
 import uiService from './modules/ui.js';
 import storageService from './modules/storage.js';
+import themeService from './modules/theme.js';
+
+// Nuovo servizio di autenticazione
+class AuthService {
+  constructor() {
+    this.token = localStorage.getItem('authToken');
+    this.user = JSON.parse(localStorage.getItem('user') || 'null');
+  }
+
+  isAuthenticated() {
+    return this.token && this.user;
+  }
+
+  getAuthHeaders() {
+    return {
+      'Authorization': `Bearer ${this.token}`,
+      'Content-Type': 'application/json'
+    };
+  }
+
+  async checkAuth() {
+    try {
+      const response = await fetch('/api/auth/check');
+      const result = await response.json();
+      
+      if (result.authenticated) {
+        this.user = result.user;
+        localStorage.setItem('user', JSON.stringify(this.user));
+        return true;
+      } else {
+        this.logout();
+        return false;
+      }
+    } catch (error) {
+      console.error('Auth check failed:', error);
+      this.logout();
+      return false;
+    }
+  }
+
+  logout() {
+    this.token = null;
+    this.user = null;
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('user');
+    window.location.href = '/login.html';
+  }
+
+  async refreshUserStats() {
+    try {
+      const response = await fetch('/api/auth/me', {
+        headers: this.getAuthHeaders()
+      });
+      
+      if (response.ok) {
+        const user = await response.json();
+        this.user = user;
+        localStorage.setItem('user', JSON.stringify(user));
+        return user;
+      }
+    } catch (error) {
+      console.error('Failed to refresh user stats:', error);
+    }
+    return this.user;
+  }
+}
+
+const authService = new AuthService();
 
 /**
  * Classe principale dell'applicazione Curation Manager
  */
 class CurationApp {  constructor() {
-    this.currentPlatform = 'steem';
+    // Inizializza prima il tema (indipendentemente dall'auth)
+    themeService.init();
+    
+    // Verifica autenticazione prima di inizializzare il resto
+    this.initializeApp();
+  }
+  async initializeApp() {
+    // Controlla se l'utente è autenticato
+    const isAuthenticated = await authService.checkAuth();
+    
+    if (!isAuthenticated) {
+      // Reindirizza al login se non autenticato, ma prima assicurati che il tema funzioni
+      this.setupBasicThemeToggle();
+      
+      // Reindirizza dopo un breve delay per permettere al tema di essere applicato
+      setTimeout(() => {
+        window.location.href = '/login.html';
+      }, 100);
+      return;
+    }
+
+    // Se autenticato, inizializza l'app
+    this.currentPlatform = authService.user.platform || 'steem';
     this.users = new Map();
     
-    // Configura gli event listeners quando il DOM è caricato
-    document.addEventListener('DOMContentLoaded', () => {
-      this.setupEventListeners();
+    // Se il DOM è già caricato, inizializza subito, altrimenti aspetta
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        this.setupAfterDOMLoaded();
+      });
+    } else {
+      // DOM già caricato
+      this.setupAfterDOMLoaded();
+    }
+  }
+  // Gestisce il toggle del tema anche se non autenticato
+  setupBasicThemeToggle() {
+    // Il tema è ora gestito centralmente da themeService
+    // Non serve fare nulla qui, themeService si occupa di tutto
+    console.log('Theme toggle handled by themeService');
+  }
+
+  setupAfterDOMLoaded() {
+    this.setupEventListeners();
+    this.setupUserInterface();
+    
+    // Carica gli utenti salvati
+    this.loadSavedUsers();
+    
+    // Mostra informazioni utente
+    this.displayUserInfo();
+  }
+
+  setupUserInterface() {
+    // Aggiungi informazioni utente nell'header
+    const header = document.querySelector('header .header-content');
+    if (header && authService.user) {
+      const userInfo = document.createElement('div');
+      userInfo.className = 'user-info-header';
+      userInfo.innerHTML = `
+        <div class="user-stats">
+          <span class="username">@${authService.user.username}</span>
+          <span class="platform">${authService.user.platform.toUpperCase()}</span>
+          <span class="plan">${authService.user.subscription_plan}</span>
+          <span class="usage">${authService.user.watched_users}/${authService.user.max_watched_users}</span>
+        </div>
+        <button id="logoutBtn" class="logout-btn" title="Logout">
+          <i class="fas fa-sign-out-alt"></i>
+        </button>
+      `;
       
-      // Carica gli utenti salvati e il tema
-      this.loadSavedUsers();
-      this.initializeTheme();
+      header.appendChild(userInfo);
       
-      // Mostra notifica del cambiamento metrica
-      setTimeout(() => {
-        uiService.showStatus('Il sistema di valutazione dei votanti ora usa il valore in STEEM come metrica principale', 'info', 6000);
-      }, 1500);
-    });
+      // Aggiungi event listener per logout
+      document.getElementById('logoutBtn').addEventListener('click', () => {
+        this.handleLogout();
+      });
+    }
+  }
+
+  async handleLogout() {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: authService.getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      authService.logout();
+    }
+  }
+
+  displayUserInfo() {
+    // Aggiorna le informazioni dell'utente nell'interfaccia
+    if (authService.user) {
+      uiService.showStatus(
+        `Welcome back, @${authService.user.username}! Plan: ${authService.user.subscription_plan} 
+         (${authService.user.watched_users}/${authService.user.max_watched_users} users)`,
+        'info'
+      );
+    }
   }
 
   /**
    * Configura tutti gli event listener dell'UI
-   */
-  setupEventListeners() {
+   */  setupEventListeners() {
     document.getElementById('steemBtn').addEventListener('click', () => this.switchPlatform('steem'));
     document.getElementById('hiveBtn').addEventListener('click', () => this.switchPlatform('hive'));
     document.getElementById('addUserForm').addEventListener('submit', (e) => this.handleAddUser(e));
-    document.getElementById('themeToggle').addEventListener('click', () => this.toggleTheme());
+    // Theme toggle rimosso - gestito da themeService
     document.getElementById('exportDataBtn').addEventListener('click', () => this.exportData());
     document.getElementById('importDataBtn').addEventListener('click', () => document.getElementById('importInput').click());
     document.getElementById('importInput').addEventListener('change', (e) => this.importData(e));
@@ -652,30 +805,7 @@ class CurationApp {  constructor() {
         }
       }
     }
-  }
-
-  /**
-   * Inizializza il tema dell'interfaccia
-   */
-  initializeTheme() {
-    const savedTheme = storageService.loadTheme();
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    uiService.updateThemeIcon();
-  }
-
-  /**
-   * Alterna tra tema chiaro e scuro
-   */
-  toggleTheme() {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    
-    document.documentElement.setAttribute('data-theme', newTheme);
-    storageService.saveTheme(newTheme);
-    uiService.updateThemeIcon();
-  }
-
-  /**
+  }  /**
    * Esporta i dati in un file JSON
    */
   exportData() {

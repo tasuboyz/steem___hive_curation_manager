@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Steem/Hive Curation Manager</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="/static/style.css" rel="stylesheet">
+    <style>
+        .login-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--bg-color) 0%, var(--accent-color) 100%);
+        }
+        
+        .login-card {
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .login-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .login-header h1 {
+            color: var(--text-color);
+            margin-bottom: 0.5rem;
+        }
+        
+        .login-header p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--text-color);
+            font-weight: 500;
+        }
+        
+        .input-group {
+            position: relative;
+        }
+        
+        .input-group i {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+        }
+        
+        .input-group input {
+            width: 100%;
+            padding: 12px 12px 12px 40px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 1rem;
+            background: var(--input-bg);
+            color: var(--text-color);
+            transition: border-color 0.3s ease;
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+        
+        .platform-selector {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .platform-btn {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid var(--border-color);
+            background: var(--input-bg);
+            color: var(--text-color);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        
+        .platform-btn.active {
+            border-color: var(--accent-color);
+            background: var(--accent-color);
+            color: white;
+        }
+        
+        .login-btn {
+            width: 100%;
+            padding: 12px;
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        
+        .login-btn:hover {
+            background: var(--accent-hover);
+        }
+        
+        .login-btn:disabled {
+            background: var(--text-secondary);
+            cursor: not-allowed;
+        }
+        
+        .error-message {
+            background: var(--error-bg);
+            color: var(--error-color);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            text-align: center;
+            display: none;
+        }
+        
+        .success-message {
+            background: var(--success-bg);
+            color: var(--success-color);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            text-align: center;
+            display: none;
+        }
+        
+        .security-note {
+            background: var(--info-bg);
+            color: var(--info-color);
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 1rem;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+        
+        .theme-toggle {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: var(--text-color);
+        }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle">
+        <i class="fas fa-moon"></i>
+        <i class="fas fa-sun"></i>
+    </button>
+
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                <h1><i class="fas fa-vote-yea"></i> Curation Manager</h1>
+                <p>Sign in with your blockchain credentials</p>
+            </div>
+
+            <div class="error-message" id="errorMessage"></div>
+            <div class="success-message" id="successMessage"></div>
+
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="platform">Platform</label>
+                    <div class="platform-selector">
+                        <button type="button" class="platform-btn active" data-platform="steem">
+                            <i class="fas fa-coins"></i> Steem
+                        </button>
+                        <button type="button" class="platform-btn" data-platform="hive">
+                            <i class="fas fa-hexagon"></i> Hive
+                        </button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <div class="input-group">
+                        <i class="fas fa-user"></i>
+                        <input type="text" id="username" name="username" placeholder="Enter your blockchain username" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="postingKey">Posting Key</label>
+                    <div class="input-group">
+                        <i class="fas fa-key"></i>
+                        <input type="password" id="postingKey" name="posting_key" placeholder="Enter your posting key" required>
+                    </div>
+                </div>
+
+                <button type="submit" class="login-btn" id="loginBtn">
+                    <i class="fas fa-sign-in-alt"></i>
+                    Sign In
+                </button>
+            </form>
+
+            <div class="security-note">
+                <i class="fas fa-shield-alt"></i>
+                Your posting key is used only for authentication and voting. It's never stored in plain text.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class LoginManager {
+            constructor() {
+                this.selectedPlatform = 'steem';
+                this.setupEventListeners();
+                this.initializeTheme();
+            }
+
+            setupEventListeners() {
+                // Platform selection
+                document.querySelectorAll('.platform-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        document.querySelectorAll('.platform-btn').forEach(b => b.classList.remove('active'));
+                        e.target.classList.add('active');
+                        this.selectedPlatform = e.target.dataset.platform;
+                    });
+                });
+
+                // Form submission
+                document.getElementById('loginForm').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    this.handleLogin();
+                });
+
+                // Theme toggle
+                document.getElementById('themeToggle').addEventListener('click', () => {
+                    this.toggleTheme();
+                });
+            }
+
+            async handleLogin() {
+                const loginBtn = document.getElementById('loginBtn');
+                const errorMsg = document.getElementById('errorMessage');
+                const successMsg = document.getElementById('successMessage');
+                
+                // Hide previous messages
+                errorMsg.style.display = 'none';
+                successMsg.style.display = 'none';
+                
+                // Disable button and show loading
+                loginBtn.disabled = true;
+                loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Authenticating...';
+
+                try {
+                    const formData = new FormData(document.getElementById('loginForm'));
+                    const loginData = {
+                        username: formData.get('username'),
+                        posting_key: formData.get('posting_key'),
+                        platform: this.selectedPlatform
+                    };
+
+                    const response = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(loginData)
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        // Login successful
+                        successMsg.textContent = 'Login successful! Redirecting...';
+                        successMsg.style.display = 'block';
+                        
+                        // Store user info in localStorage
+                        localStorage.setItem('authToken', result.token);
+                        localStorage.setItem('user', JSON.stringify(result.user));
+                        
+                        // Redirect to main app
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 1000);                    } else {
+                        // Login failed
+                        let errorMessage = result.error || 'Login failed';
+                        
+                        // Personalizza i messaggi di errore per l'utente
+                        if (errorMessage.includes('not found')) {
+                            errorMessage = 'Account not found on the blockchain. Please check your username.';
+                        } else if (errorMessage.includes('Invalid posting key')) {
+                            errorMessage = 'Invalid posting key. Please check your posting key.';
+                        } else if (errorMessage.includes('nodes available')) {
+                            errorMessage = 'Blockchain nodes are currently unavailable. Please try again later.';
+                        }
+                        
+                        errorMsg.textContent = errorMessage;
+                        errorMsg.style.display = 'block';
+                    }
+                } catch (error) {
+                    console.error('Login error:', error);
+                    errorMsg.textContent = 'Connection error. Please try again.';
+                    errorMsg.style.display = 'block';
+                } finally {
+                    // Re-enable button
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Sign In';
+                }
+            }
+
+            initializeTheme() {
+                const savedTheme = localStorage.getItem('theme') || 'light';
+                document.documentElement.setAttribute('data-theme', savedTheme);
+                this.updateThemeIcon();
+            }
+
+            toggleTheme() {
+                const currentTheme = document.documentElement.getAttribute('data-theme');
+                const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                
+                document.documentElement.setAttribute('data-theme', newTheme);
+                localStorage.setItem('theme', newTheme);
+                this.updateThemeIcon();
+            }
+
+            updateThemeIcon() {
+                const themeToggle = document.getElementById('themeToggle');
+                const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+                
+                themeToggle.innerHTML = isDark ? 
+                    '<i class="fas fa-sun"></i>' : 
+                    '<i class="fas fa-moon"></i>';
+            }
+        }
+
+        // Initialize login manager
+        const loginManager = new LoginManager();
+
+        // Check if already authenticated
+        const checkAuth = async () => {
+            try {
+                const response = await fetch('/api/auth/check');
+                const result = await response.json();
+                
+                if (result.authenticated) {
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.log('Not authenticated');
+            }
+        };
+
+        // Test function per verificare l'autenticazione
+        const testAuth = async () => {
+            try {
+                const response = await fetch('/api/auth/me', {
+                    headers: authService.getAuthHeaders()
+                });
+                
+                if (response.ok) {
+                    const user = await response.json();
+                    console.log('Auth test successful:', user);
+                    return true;
+                } else {
+                    console.log('Auth test failed:', response.status);
+                    return false;
+                }
+            } catch (error) {
+                console.error('Auth test error:', error);
+                return false;
+            }
+        };
+
+        // Esegui test di autenticazione dopo il login
+        if (result.authenticated) {
+            setTimeout(async () => {
+                const authWorking = await testAuth();
+                if (!authWorking) {
+                    console.warn('Authentication might not be working properly');
+                }
+            }, 500);
+        }
+
+        checkAuth();
+    </script>
+</body>
+</html>
