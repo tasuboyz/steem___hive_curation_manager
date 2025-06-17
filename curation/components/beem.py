@@ -35,6 +35,7 @@ class Blockchain:
         # Inizializza la blockchain di riferimento (usata in get_post_voters)
         self.blockchain = None
         self.app = app  # Salva l'app Flask se fornita
+        self.processed_posts = set()
         
         # Carica la cache esistente se disponibile
         self._load_cache()
@@ -692,6 +693,49 @@ class Blockchain:
             logger.error(f"Errore nel recupero dei post precedenti di @{author}: {str(e)}")
             return []
             
+    def get_new_posts(self, platform, limit=10):
+        try:
+            logger.info(f"Recupero dei {limit} post nuovi su {platform}")
+
+            # Trova il nodo disponibile
+            node_urls = self.node_urls.get(platform.lower(), [])
+            node_url = None
+            
+            for url in node_urls:
+                if self.ping_server(url):
+                    node_url = url
+                    break
+            
+            if not node_url:
+                logger.error(f"Nessun nodo {platform} disponibile")
+                return []
+            
+            # Prepara la richiesta API
+            headers = {'Content-Type': 'application/json'}
+            data = {
+                "jsonrpc": "2.0",
+                "method": "condenser_api.get_discussions_by_created",
+                "params": [{"limit": limit}],  # +1 per escludere il post attuale
+                "id": 1
+            }
+            
+            response = requests.post(node_url, headers=headers, data=json.dumps(data), timeout=10)
+            response.raise_for_status()
+            
+            posts = response.json().get('result', [])
+            new_posts = []
+            for post in posts:
+                post_id = f"{post['author']}/{post['permlink']}"
+                if post_id not in self.processed_posts:
+                    new_posts.append(post)
+                    self.processed_posts.add(post_id)
+
+            return new_posts
+
+        except Exception as e:
+            # logger.error(f"Errore nel recupero dei post precedenti di @{author}: {str(e)}")
+            return []
+
     def get_curator_info(self, platform):
         """Ottiene le informazioni del curatore dalla configurazione o dal database"""
         try:

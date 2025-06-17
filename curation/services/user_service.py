@@ -278,3 +278,22 @@ class UserService:
                 'timestamp': account.created_at.isoformat() if account.created_at else None
             }
         return result
+
+    @staticmethod
+    def get_all_watched_authors(platform=None, app=None):
+        """Restituisce la lista di tutti gli autori monitorati (watched_username distinti) opzionalmente filtrati per piattaforma."""
+        from ..models.auth import UserWatchedAccount
+        ctx = UserService._ensure_app_context(app)
+        if ctx:
+            with ctx:
+                query = UserWatchedAccount.query
+                if platform:
+                    query = query.filter_by(platform=platform)
+                authors = query.with_entities(UserWatchedAccount.watched_username).distinct().all()
+        else:
+            query = UserWatchedAccount.query
+            if platform:
+                query = query.filter_by(platform=platform)
+            authors = query.with_entities(UserWatchedAccount.watched_username).distinct().all()
+        # Estrae solo il nome autore dalla tupla
+        return [a[0] for a in authors]
