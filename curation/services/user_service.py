@@ -56,8 +56,7 @@ class UserService:
                 with ctx:
                     users = User.query.all()
                     return [u.username for u in users if u.data.get('platform') == platform]
-            else:
-                # Siamo già in un contesto
+            else:                # Siamo già in un contesto
                 users = User.query.all()
                 return [u.username for u in users if u.data.get('platform') == platform]
         except Exception as e:
@@ -65,26 +64,43 @@ class UserService:
             return []
     
     @staticmethod
-    def get_user_by_username(username, app=None):
-        """Recupera i dati di un utente specifico"""
+    def get_user_by_username(username, user_account_id, app=None):
+        """Recupera i dati di un account monitorato specifico per l'utente autenticato"""
         try:
             ctx = UserService._ensure_app_context(app)
             if ctx:
                 with ctx:
-                    user = User.query.filter_by(username=username).first()
-                    if user:
-                        return user.data
-                    return None
+                    return UserService._get_watched_account_by_username(username, user_account_id)
             else:
                 # Siamo già in un contesto
-                user = User.query.filter_by(username=username).first()
-                if user:
-                    return user.data
-                return None
+                return UserService._get_watched_account_by_username(username, user_account_id)
         except Exception as e:
-            logger.error(f"Errore nel recupero dell'utente {username} dal database: {e}")
+            logger.error(f"Errore nel recupero dell'account monitorato {username} per user_account_id {user_account_id}: {e}")
             return None
     
+    @staticmethod
+    def _get_watched_account_by_username(username, user_account_id):
+        """Ottiene un account monitorato specifico"""
+        watched_account = UserWatchedAccount.query.filter_by(
+            user_account_id=user_account_id,
+            watched_username=username
+        ).first()
+        
+        if not watched_account:
+            return None
+        
+        return {
+            'username': watched_account.watched_username,
+            'platform': watched_account.platform,
+            'voteDelay': watched_account.vote_delay,
+            'voteWeight': watched_account.vote_weight,
+            'votesPerDay': watched_account.votes_per_day,
+            'useOptimalTime': watched_account.use_optimal_time,
+            'dailyVotesCount': watched_account.daily_votes_count,
+            'lastVoteDate': watched_account.last_vote_date.isoformat() if watched_account.last_vote_date else None,
+            'timestamp': watched_account.created_at.isoformat() if watched_account.created_at else None
+        }
+
     @staticmethod
     def get_user_for_post(post_link, app=None):
         """Trova l'utente associato a un post tramite il link"""
@@ -194,7 +210,6 @@ class UserService:
         watched_account.vote_weight = user_data.get('voteWeight', watched_account.vote_weight)
         watched_account.votes_per_day = user_data.get('votesPerDay', watched_account.votes_per_day)
         watched_account.use_optimal_time = user_data.get('useOptimalTime', watched_account.use_optimal_time)
-        
         db.session.commit()
         logger.info(f"Account monitorato aggiornato: {username} su {platform}")
         return True
@@ -206,14 +221,14 @@ class UserService:
             ctx = UserService._ensure_app_context(app)
             if ctx:
                 with ctx:
-                    watched = UserWatchedAccount.query.filter_by(username=username, user_account_id=user_account_id).first()
+                    watched = UserWatchedAccount.query.filter_by(watched_username=username, user_account_id=user_account_id).first()
                     if watched:
                         db.session.delete(watched)
                         db.session.commit()
                         return True
                     return False
             else:
-                watched = UserWatchedAccount.query.filter_by(username=username, user_account_id=user_account_id).first()
+                watched = UserWatchedAccount.query.filter_by(watched_username=username, user_account_id=user_account_id).first()
                 if watched:
                     db.session.delete(watched)
                     db.session.commit()
@@ -222,3 +237,44 @@ class UserService:
         except Exception as e:
             logger.error(f"Errore nell'eliminazione dell'account monitorato {username} per user_account_id {user_account_id}: {e}")
             return False
+    
+    @staticmethod
+    def get_all_users(curator_username, platform=None, app=None):
+        """Recupera tutti gli account monitorati per il curatore loggato (username e piattaforma)"""
+        try:
+            ctx = UserService._ensure_app_context(app)
+            if ctx:
+                with ctx:
+                    return UserService._get_all_watched_accounts_by_curator(curator_username, platform)
+            else:
+                return UserService._get_all_watched_accounts_by_curator(curator_username, platform)
+        except Exception as e:
+            logger.error(f"Errore nel recupero degli account monitorati per il curatore {curator_username} su {platform}: {e}")
+            return {}
+
+    @staticmethod
+    def _get_all_watched_accounts_by_curator(curator_username, platform=None):
+        from ..models.auth import UserAccount, UserWatchedAccount
+        query = UserAccount.query.filter_by(username=curator_username)
+        if platform:
+            query = query.filter_by(platform=platform)
+        user = query.first()
+        if not user:
+            return {}
+        watched_accounts = UserWatchedAccount.query.filter_by(user_account_id=user.id)
+        if platform:
+            watched_accounts = watched_accounts.filter_by(platform=platform)
+        watched_accounts = watched_accounts.all()
+        result = {}
+        for account in watched_accounts:
+            result[account.watched_username] = {
+                'platform': account.platform,
+                'voteDelay': account.vote_delay,
+                'voteWeight': account.vote_weight,
+                'votesPerDay': account.votes_per_day,
+                'useOptimalTime': account.use_optimal_time,
+                'dailyVotesCount': account.daily_votes_count,
+                'lastVoteDate': account.last_vote_date.isoformat() if account.last_vote_date else None,
+                'timestamp': account.created_at.isoformat() if account.created_at else None
+            }
+        return result

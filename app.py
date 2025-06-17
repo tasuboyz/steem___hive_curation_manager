@@ -201,13 +201,15 @@ def get_user(username):
 @auth_required
 def get_all_users():
     user_account = get_current_user()
-    # Ottieni tutti gli account monitorati per l'utente autenticato
-    watched_accounts = UserService.get_all_users(user_account.id)
-    # watched_accounts è un dict {username: dati}
+    platform = user_account.platform
+    username = user_account.username
+    watched_accounts = UserService.get_all_users(username, platform)
     user_list = []
     for username, data in watched_accounts.items():
-        entry = {'username': username}
-        entry.update(data)
+        entry = {
+            'username': username,
+            'data': data
+        }
         user_list.append(entry)
     return jsonify(user_list)
 
