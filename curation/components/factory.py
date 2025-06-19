@@ -112,24 +112,28 @@ def create_app():
 
 def init_services(app):
     """Inizializza tutti i servizi dell'applicazione"""
-    # Aggiorna le configurazioni da database nel contesto dell'applicazione
     with app.app_context():
         update_config_from_db(SettingsService)
-    
+
     # Setup dello scheduler
     setup_scheduler(app)
-    
-    # Importa qui per evitare import circolari
-    from curation.sniper import SocialMediaPublisher
-    
-    # Registra il thread per il publisher
-    publisher = SocialMediaPublisher(app)
-    publisher_thread = threading.Thread(
-        target=publisher.publish_posts, 
-        name="PublisherThread",
-        daemon=True
-    )
-    app_state.register_thread(publisher_thread)
-    
+
+    # Importa la nuova logica Sniper
+    from curation.sniper import Sniper
+
+    # Avvia uno sniper per ogni piattaforma
+    snipers = []
+    for platform in ("steem", "hive"):
+        sniper = Sniper(platform=platform, app=app)
+        sniper_thread = threading.Thread(
+            target=sniper.run,
+            name=f"SniperThread-{platform}",
+            daemon=True
+        )
+        app_state.register_thread(sniper_thread)
+        snipers.append(sniper)
+
     # Avvia tutti i thread
     app_state.start_threads()
+
+    logger.info("Sniper threads avviati per tutte le piattaforme")

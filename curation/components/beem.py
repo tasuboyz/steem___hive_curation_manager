@@ -48,6 +48,25 @@ class Blockchain:
         except requests.exceptions.RequestException as e:
             logger.error(f"Error pinging server {node_url}: {e}")
             return False
+        
+    def get_blockchain_instance(self, platform):
+        """
+        Restituisce l'istanza blockchain corretta per la piattaforma e il nodo specificato.
+        :param platform: 'steem' o 'hive'
+        :return: Oggetto Steem o Hive
+        """
+        for node_url in self.node_urls.get(platform):
+            if not self.ping_server(node_url):
+                logger.error(f"Impossibile raggiungere il server: {node_url}")
+                continue  # Prova il nodo successivo
+
+        if platform.lower() == "steem":
+            return Steem(node=node_url) if node_url else Steem()
+        elif platform.lower() == "hive":
+            return Hive(node=node_url) if node_url else Hive()
+        else:
+            raise ValueError(f"Piattaforma non supportata: {platform}")
+        
 
     def get_profile_info(self, username, platform='steem'):  
         for node_url in self.node_urls.get(platform):
@@ -491,6 +510,12 @@ class Blockchain:
         current_vp = min(voting_power + regenerated_vp, 100)
         return current_vp
     
+    def get_voting_power(self, username, platform='steem'):
+        instance = self.get_blockchain_instance(platform)
+        account = Account(username, blockchain_instance=instance)
+        vp = account.vp
+        return vp
+    
     def get_account_info(self, username):
         for node_url in self.node_urls.get('steem'):
             if not self.ping_server(node_url):
@@ -657,38 +682,14 @@ class Blockchain:
         """
         try:
             logger.info(f"Recupero dei {limit} post precedenti di @{author} su {platform}")
-            
-            # Trova il nodo disponibile
-            node_urls = self.node_urls.get(platform.lower(), [])
-            node_url = None
-            
-            for url in node_urls:
-                if self.ping_server(url):
-                    node_url = url
-                    break
-            
-            if not node_url:
-                logger.error(f"Nessun nodo {platform} disponibile")
-                return []
-            
-            # Prepara la richiesta API
-            headers = {'Content-Type': 'application/json'}
-            data = {
-                "jsonrpc": "2.0",
-                "method": "condenser_api.get_discussions_by_blog",
-                "params": [{"tag": author, "limit": limit+1}],  # +1 per escludere il post attuale
-                "id": 1
-            }
-            
-            response = requests.post(node_url, headers=headers, data=json.dumps(data), timeout=10)
-            response.raise_for_status()
-            
-            posts = response.json().get('result', [])
-            author_posts = [post for post in posts if post.get('author') == author][1:limit+1]
-            
-            logger.info(f"Recuperati {len(author_posts)} post precedenti di @{author}")
-            return author_posts
-            
+
+            blockchain_instance = self.get_blockchain_instance(platform)
+
+            author = Account(author, blockchain_instance=blockchain_instance)
+            author_posts = author.get_blog(start_entry_id=0, limit=limit + 1, raw_data=False, short_entries=False, account=None)
+            previous_posts = author_posts[1:]
+            return previous_posts  # Escludi il post attuale (primo nella lista)
+
         except Exception as e:
             logger.error(f"Errore nel recupero dei post precedenti di @{author}: {str(e)}")
             return []
