@@ -89,7 +89,7 @@ class Sniper:
         
         # Calcola quando votare
         if watch_settings.use_optimal_time or watch_settings.vote_delay == 'auto':
-            previous_post = self.blockchain.get_previous_author_posts(post['author'], limit=1)
+            previous_post = self.blockchain.get_previous_author_posts(post['author'], watch_settings.platform, limit=1)
             post_permlink = previous_post[0].get('permlink', '')
             post_voters = self.vote.get_post_voters(f"@{post['author']}/{post_permlink}", min_importance=0.1)
             optimal_vote_info = self.vote.calculate_optimal_vote_time(post_voters)
@@ -105,8 +105,6 @@ class Sniper:
                 SettingsService.get_setting('chat_id', default='', app=self.app),
                 telegram_message
             )
-            self.vote
-            vote_delay_minutes = 3 # Default per ora
         else:
             vote_delay_minutes = int(watch_settings.vote_delay)
         

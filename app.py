@@ -163,7 +163,7 @@ def add_user():
     # Aggiungi l'ID dell'account utente ai dati
     user_data['user_account_id'] = user_account.id
     
-    success = UserService.add_user(user_data)
+    success = UserService.add_user(user_data, app)
     if success:
         return jsonify({'message': 'User added successfully'})
     return jsonify({'message': 'Error adding user'}), 500
@@ -200,18 +200,29 @@ def get_user(username):
 @app.route('/users', methods=['GET'])
 @auth_required
 def get_all_users():
-    user_account = get_current_user()
-    platform = user_account.platform
-    username = user_account.username
-    watched_accounts = UserService.get_all_users(username, platform)
-    user_list = []
-    for username, data in watched_accounts.items():
-        entry = {
-            'username': username,
-            'data': data
-        }
-        user_list.append(entry)
-    return jsonify(user_list)
+    try:
+        user_account = get_current_user()
+        platform = user_account.platform
+        username = user_account.username
+        
+        logger.debug(f"Recupero utenti per: {username} su piattaforma {platform}")
+        
+        watched_accounts = UserService.get_all_users(username, platform)
+        user_list = []
+        for username, data in watched_accounts.items():
+            entry = {
+                'username': username,
+                'data': data
+            }
+            user_list.append(entry)
+        
+        logger.debug(f"Restituiti {len(user_list)} utenti")
+        return jsonify(user_list)
+        
+    except Exception as e:
+        logger.error(f"Errore in get_all_users: {e}")
+        logger.error(f"Traceback: ", exc_info=True)
+        return jsonify({'error': 'Errore interno del server', 'details': str(e)}), 500
 
 # Routes per la gestione delle impostazioni
 @app.route('/api/settings', methods=['GET'])

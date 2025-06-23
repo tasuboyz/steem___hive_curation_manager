@@ -62,7 +62,7 @@ class AuthService:
                     username=username,
                     platform=platform,
                     subscription_plan='free',
-                    max_watched_users=5,
+                    max_watched_users=20,
                     max_daily_votes=10
                 )
                 user_account.set_posting_key(posting_key)
