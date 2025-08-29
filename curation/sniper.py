@@ -13,8 +13,10 @@ from beem.vote import Vote
 from beem import Steem, Hive
 from curation.utils.telegram_notify import send_telegram_message
 from .utils.vote import VoteManager
+from .utils.webhook import send_post_voters_to_n8n
 from .components.config import steem_domain, hive_domain
 from .utils.telegram_notify import send_telegram_message
+import requests
 
 class Sniper:
     def __init__(self, platform="steem", app=None):
@@ -92,6 +94,12 @@ class Sniper:
             previous_post = self.blockchain.get_previous_author_posts(post['author'], watch_settings.platform, limit=1)
             post_permlink = previous_post[0].get('permlink', '')
             post_voters = self.vote.get_post_voters(f"@{post['author']}/{post_permlink}", min_importance=0.1)
+            # Invia i dati dei votanti del post precedente al webhook esterno (n8n)
+            try:
+                resp = send_post_voters_to_n8n(post['author'], post_permlink, post_voters)
+            except Exception:
+                # L'errore è già loggato nella funzione; non bloccare il flusso del voto
+                pass
             optimal_vote_info = self.vote.calculate_optimal_vote_time(post_voters)
             vote_delay_minutes = optimal_vote_info['optimal_time']
             vote_explanation = optimal_vote_info['explanation'] + " (basato su post precedenti)"

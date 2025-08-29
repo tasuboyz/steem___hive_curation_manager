@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Steem/Hive Curation Test Interface</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Steem/Hive Curation Test Interface</h1>
+            <p>Inserisci un sample per testare il sistema di curation e visualizzare i votanti</p>
+        </header>
+
+        <main>
+            <div class="input-section">
+                <form id="testForm">
+                    <div class="form-group">
+                        <label for="sample">Sample Post URL:</label>
+                        <input 
+                            type="text" 
+                            id="sample" 
+                            name="sample" 
+                            placeholder="@cryptopie/renting-our-neighbors-unused-house-will-going-to-suck-to-stay-into-because-the-toilet-has-no-flush"
+                            value="@cryptopie/renting-our-neighbors-unused-house-will-going-to-suck-to-stay-into-because-the-toilet-has-no-flush"
+                            required
+                        >
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="platform">Platform:</label>
+                        <select id="platform" name="platform">
+                            <option value="steem">Steem</option>
+                            <option value="hive">Hive</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="minImportance">Min Importance:</label>
+                        <input 
+                            type="number" 
+                            id="minImportance" 
+                            name="minImportance" 
+                            step="0.1" 
+                            min="0" 
+                            max="1" 
+                            value="0.1"
+                        >
+                    </div>
+
+                    <button type="submit" id="submitBtn">
+                        <span class="btn-text">🔍 Analizza Post</span>
+                        <span class="spinner" style="display: none;">⏳</span>
+                    </button>
+                </form>
+            </div>
+
+            <div class="results-section" id="resultsSection" style="display: none;">
+                <h2>📊 Risultati Analisi</h2>
+                
+                <div class="info-card">
+                    <h3>ℹ️ Informazioni Post</h3>
+                    <div id="postInfo"></div>
+                </div>
+
+                <div class="voters-card">
+                    <h3>👥 Votanti Analizzati</h3>
+                    <div class="voters-stats">
+                        <div class="stat">
+                            <span class="stat-label">Totale Votanti:</span>
+                            <span class="stat-value" id="totalVoters">-</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Valore Totale:</span>
+                            <span class="stat-value" id="totalValue">-</span>
+                        </div>
+                    </div>
+                    <div class="voters-table-container">
+                        <table id="votersTable">
+                            <thead>
+                                <tr>
+                                    <th>Votante</th>
+                                    <th>RShares</th>
+                                    <th>Valore</th>
+                                    <th>Importanza</th>
+                                    <th>Delay (min)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="votersTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="webhook-card">
+                    <h3>🔗 Webhook Response</h3>
+                    <div id="webhookResponse"></div>
+                </div>
+
+                <div class="logs-card">
+                    <h3>📝 Logs</h3>
+                    <div id="logsOutput"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
