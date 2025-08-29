@@ -89,7 +89,8 @@ document.addEventListener('DOMContentLoaded', function() {
             author: data.author,
             permlink: data.permlink,
             previous_permlink: data.previous_permlink,
-            platform: data.platform
+            platform: data.platform,
+            curator: data.curator || null
         }, null, 2);
 
         // Display voters stats

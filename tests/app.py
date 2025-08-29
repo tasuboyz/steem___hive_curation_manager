@@ -115,6 +115,32 @@ def test_curation():
             logger.error(f"Error getting post voters: {e}")
             post_voters = []
         
+        # Calcola anche il voto del curatore e aggiungilo ai post_voters se mancante
+        curator_username = None
+        try:
+            curator_vote = None
+            try:
+                curator_info = blockchain.get_curator_info(platform) or {}
+            except Exception:
+                curator_info = {}
+
+            curator_username = (curator_info.get('username') or '').strip() or None
+            if curator_username:
+                already_present = any(str(v.get('voter', '')).lower() == curator_username.lower() for v in post_voters)
+                if not already_present:
+                    # Aggiungiamo un record minimale per il voto del curatore. Il test n8n può usare is_curator per identificarlo.
+                    curator_vote = {
+                        'voter': curator_username,
+                        'weight': None,
+                        'vote_time': None,
+                        'importance': None,
+                        'is_curator': True
+                    }
+                    post_voters.append(curator_vote)
+                    logger.info(f"Added curator vote to post_voters: @{curator_username}")
+        except Exception as e:
+            logger.debug(f"Errore aggiunta voto curatore: {e}")
+        
         # Send to webhook
         webhook_response = None
         try:

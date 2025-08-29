@@ -3,10 +3,11 @@ from ..components.logger_config import logger
 import json
 
 # Default n8n webhook URL (can be overridden by passing webhook_url)
-DEFAULT_N8N_WEBHOOK = "https://edinthor.app.n8n.cloud/webhook-test/64a9a7f0-fafe-4b83-aa7b-abfa2ea25227"
+# DEFAULT_N8N_WEBHOOK = "https://edinthor.app.n8n.cloud/webhook-test/64a9a7f0-fafe-4b83-aa7b-abfa2ea25227"
 
+DEFAULT_N8N_WEBHOOK = "http://192.168.1.14:5678/webhook-test/64a9a7f0-fafe-4b83-aa7b-abfa2ea25227"
 
-def send_post_voters_to_n8n(author, permlink, post_voters, webhook_url=None, timeout=60):
+def send_post_voters_to_n8n(author, permlink, post_voters, webhook_url=None, timeout=300):
     """Invia i dati dei votanti di un post a un webhook n8n.
 
     Args:
@@ -20,9 +21,21 @@ def send_post_voters_to_n8n(author, permlink, post_voters, webhook_url=None, tim
         Exception: se la richiesta fallisce (non-2xx) o ci sono errori di rete
     """
     url = webhook_url or DEFAULT_N8N_WEBHOOK
+    # Struttura payload: inviamo la lista come oggetto JSON strutturato e, se presente, il curator separato
+    curator_field = None
+    try:
+        # Cerca eventuale entry is_curator nella lista
+        for pv in post_voters:
+            if isinstance(pv, dict) and pv.get('is_curator'):
+                curator_field = pv.get('voter')
+                break
+    except Exception:
+        curator_field = None
+
     payload = {
         'author': author,
         'permlink': permlink,
+        'curator': curator_field,
         'post_voters': json.dumps(post_voters)
     }
     headers = {'Content-Type': 'application/json'}
